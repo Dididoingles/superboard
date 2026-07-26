@@ -1,0 +1,1538 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" type="image/png" href="favicon.png">
+    <title>Interactive Superboard</title>
+    
+    <!-- External Libraries -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.1/fabric.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    
+    <style>
+      /* 1. CSS VARIABLES & BASE STYLES*/
+      :root { 
+        --primary-red: #c00000; 
+        --primary-red-hover: #a00000;
+        --bg-main: #fdfaf5; 
+        --text-color: #333; 
+        --panel-bg: #ffffff; 
+        --border-color: #dddddd;
+      }
+      
+      body { 
+        margin: 0; 
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+        background-color: var(--bg-main); 
+        color: var(--text-color); 
+        overflow: hidden; 
+        display: flex; 
+        flex-direction: column; 
+        height: 100vh; 
+      }
+
+      /* 2. NAVIGATION & TOP BAR */
+      .top-bar { 
+        background: var(--primary-red); 
+        color: white; 
+        display: flex; 
+        justify-content: space-between; 
+        align-items: center; 
+        padding: 8px 20px; 
+        font-weight: bold; 
+        flex-shrink: 0; 
+      }
+      
+      .top-bar-left { 
+        display: flex; 
+        align-items: center; 
+        gap: 15px; 
+      }
+      
+      .tutorial-btn { 
+        background: rgba(255,255,255,0.2); 
+        border: 1px solid rgba(255,255,255,0.3); 
+        color: white; 
+        cursor: pointer; 
+        padding: 5px 12px; 
+        border-radius: 20px; 
+        font-size: 12px; 
+        font-weight: 500; 
+        transition: all 0.2s; 
+      }
+      
+      .tutorial-btn:hover { 
+        background: rgba(255,255,255,0.3); 
+        transform: scale(1.05); 
+      }
+
+      .nav-tabs { 
+        display: flex; 
+        background: var(--panel-bg); 
+        border-bottom: 1px solid var(--border-color); 
+        justify-content: center; 
+        gap: 20px; 
+        padding: 8px 0; 
+        flex-shrink: 0; 
+      }
+      
+      .tab { 
+        cursor: pointer; 
+        opacity: 0.7; 
+        padding: 6px 16px; 
+        font-weight: 500; 
+        transition: all 0.2s; 
+      }
+      
+      .tab:hover { 
+        opacity: 1; 
+        background: rgba(192,0,0,0.08); 
+        border-radius: 8px; 
+      }
+      
+      .tab.active { 
+        opacity: 1; 
+        border-bottom: 3px solid var(--primary-red); 
+        color: var(--primary-red); 
+      }
+
+      #screen-Quadro { 
+        display: flex; 
+        flex-direction: column; 
+        flex-grow: 1; 
+        overflow: hidden; 
+      }
+      
+      #quadro-layout { 
+        display: flex; 
+        flex-grow: 1; 
+        overflow: hidden; 
+        position: relative;
+      }
+      
+      #sidebar { 
+        width: 70px; 
+        background: var(--panel-bg); 
+        border-right: 1px solid var(--border-color); 
+        display: flex; 
+        flex-direction: column; 
+        align-items: center; 
+        gap: 12px; 
+        padding: 12px 0; 
+        overflow: visible; 
+        flex-shrink: 0;
+        position: relative;
+        z-index: 10;
+      }
+      
+      #canvas-container { 
+        flex-grow: 1; 
+        display: flex; 
+        justify-content: center; 
+        align-items: center; 
+        padding: 10px; 
+        background: #eee; 
+        overflow: hidden; 
+        position: relative;
+        z-index: 1; 
+      }
+      
+      canvas { 
+        border-radius: 8px; 
+        box-shadow: 0 4px 10px rgba(0,0,0,0.15); 
+      }
+      
+      #right-controls { 
+        width: 120px; 
+        background: var(--panel-bg); 
+        border-left: 1px solid var(--border-color); 
+        display: flex; 
+        flex-direction: column; 
+        align-items: center; 
+        gap: 10px; 
+        padding: 12px 6px; 
+        overflow-y: auto; 
+        flex-shrink: 0;
+      }
+
+      .side-item { 
+        font-size: 20px; 
+        cursor: pointer; 
+        padding: 10px; 
+        border: 1px solid #eee; 
+        border-radius: 10px; 
+        background: #fff; 
+        transition: all 0.2s; 
+        color: #444;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 24px;
+        height: 24px;
+      }
+      
+      .side-item:hover { 
+        transform: scale(1.08); 
+        border-color: var(--primary-red); 
+        color: var(--primary-red);
+        background: #fff5f5; 
+      }
+
+      /* Control Panels & Custom Inputs */
+      .control-label {
+        font-size: 10px; 
+        font-weight: bold; 
+        color: #777; 
+        text-transform: uppercase;
+        margin-top: 4px;
+      }
+
+      .color-picker-wrapper {
+        position: relative;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        margin-bottom: 4px;
+      }
+
+      .color-picker-wrapper input[type="color"] {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        opacity: 0;
+        cursor: pointer;
+        z-index: 2;
+      }
+
+      .color-picker-btn {
+        transition: all 0.2s ease;
+      }
+
+      .color-picker-wrapper:hover .color-picker-btn {
+        transform: scale(1.08);
+        border-color: var(--primary-red);
+        color: var(--primary-red);
+        background: #fff5f5;
+      }
+
+      .brush-size-container {
+        width: 90%;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+      }
+
+      .brush-size-container input[type=range] {
+        width: 100%;
+        margin: 4px 0;
+      }
+
+      .color-grid { 
+        display: grid; 
+        grid-template-columns: 1fr 1fr; 
+        gap: 6px; 
+      }
+      
+      .color-circle { 
+        width: 22px; 
+        height: 22px; 
+        border-radius: 50%; 
+        cursor: pointer; 
+        border: 2px solid transparent; 
+        transition: all 0.2s; 
+      }
+      
+      .color-circle:hover { 
+        transform: scale(1.15); 
+      }
+      
+      .color-circle.active { 
+        border-color: #333; 
+        transform: scale(1.1); 
+      }
+
+      .action-btn { 
+        width: 92%; 
+        font-weight: bold; 
+        font-size: 10px; 
+        padding: 8px 4px; 
+        border-radius: 6px; 
+        cursor: pointer; 
+        border: 1px solid #ddd; 
+        background: #fff; 
+        transition: all 0.2s; 
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 4px;
+      }
+      
+      .action-btn:hover { 
+        background: #f8f8f8; 
+        border-color: var(--primary-red); 
+        transform: translateY(-1px); 
+      }
+
+      /* 4. HANGMAN GAME SCREEN */
+      .screen-content { 
+        display: none; 
+        padding: 20px; 
+        max-width: 1000px; 
+        margin: 0 auto; 
+        flex-grow: 1; 
+        overflow-y: auto; 
+      }
+      
+      .game-container { 
+        display: flex; 
+        justify-content: center; 
+        align-items: center; 
+        gap: 40px; 
+        margin-top: 20px; 
+        background: white; 
+        padding: 20px; 
+        border-radius: 12px; 
+        box-shadow: 0 2px 10px rgba(0,0,0,0.05); 
+      }
+      
+      #hangman-canvas { 
+        background: white; 
+        border-right: 1px solid #eee; 
+        padding-right: 15px; 
+      }
+      
+      #hangman-word-display { 
+        font-family: monospace; 
+        font-size: 40px; 
+        letter-spacing: 10px; 
+        font-weight: bold; 
+        text-align: center; 
+        min-width: 200px; 
+      }
+      
+      .keyboard-grid { 
+        display: grid; 
+        grid-template-columns: repeat(7, 1fr); 
+        gap: 6px; 
+        width: auto; 
+        max-width: 400px; 
+      }
+      
+      .key-btn { 
+        padding: 8px 0; 
+        width: 35px; 
+        border: 1px solid #ddd; 
+        cursor: pointer; 
+        border-radius: 6px; 
+        background: white; 
+        font-weight: bold; 
+        font-size: 14px; 
+        transition: 0.2s; 
+        box-shadow: 0 3px 0 #ccc; 
+        position: relative; 
+        color: var(--text-color); 
+      }
+      
+      .key-btn:hover { 
+        background: var(--primary-red); 
+        color: white; 
+        border-color: var(--primary-red); 
+        transform: translateY(-2px); 
+        box-shadow: 0 5px 0 #a00000; 
+      }
+      
+      .key-btn:active { 
+        transform: translateY(1px); 
+        box-shadow: 0 1px 0 #a00000; 
+      }
+
+      .phrase-btn { 
+        background: var(--panel-bg); 
+        color: var(--text-color); 
+        border: 1px solid #ccc; 
+        padding: 5px 10px; 
+        border-radius: 8px; 
+        cursor: pointer; 
+        font-size: 11px; 
+        text-align: center; 
+        transition: all 0.2s; 
+      }
+
+      .phrase-btn:hover {
+        background: var(--primary-red-hover) !important;
+        transform: translateY(-2px);
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+      }
+
+      /* 5. MODALS SYSTEM */
+      .modal-overlay {
+        position: fixed;
+        top: 0; left: 0; right: 0; bottom: 0;
+        background: rgba(0,0,0,0.5);
+        z-index: 20000;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        opacity: 0;
+        visibility: hidden;
+        transition: all 0.25s ease;
+      }
+
+      .modal-overlay.active {
+        opacity: 1;
+        visibility: visible;
+      }
+
+      .modal-card {
+        background: white;
+        border-radius: 14px;
+        max-width: 420px;
+        width: 90%;
+        max-height: 80vh;
+        overflow-y: auto;
+        padding: 20px;
+        box-shadow: 0 15px 30px rgba(0,0,0,0.2);
+        transform: scale(0.92);
+        transition: transform 0.25s ease;
+      }
+
+      .modal-overlay.active .modal-card {
+        transform: scale(1);
+      }
+
+      .modal-card h3 {
+        color: var(--primary-red);
+        margin-top: 0;
+        margin-bottom: 12px;
+        font-size: 18px;
+        text-align: center;
+      }
+
+      .icon-grid {
+        display: grid;
+        grid-template-columns: repeat(5, 1fr);
+        gap: 12px;
+        padding: 10px 0;
+      }
+
+      .icon-option {
+        font-size: 22px;
+        padding: 12px;
+        border: 1px solid #eee;
+        border-radius: 8px;
+        text-align: center;
+        cursor: pointer;
+        color: #444;
+        transition: all 0.2s;
+      }
+
+      .icon-option:hover {
+        background: #fff0f0;
+        color: var(--primary-red);
+        border-color: var(--primary-red);
+        transform: scale(1.1);
+      }
+
+      .modal-actions {
+        display: flex;
+        gap: 10px;
+        margin-top: 15px;
+      }
+
+      .btn-modal {
+        flex: 1;
+        padding: 10px;
+        border-radius: 8px;
+        border: none;
+        font-weight: bold;
+        cursor: pointer;
+        font-size: 13px;
+        transition: all 0.2s;
+      }
+
+      .btn-modal-primary { background: var(--primary-red); color: white; }
+      .btn-modal-primary:hover { background: var(--primary-red-hover); }
+      .btn-modal-secondary { background: #eee; color: #333; }
+      .btn-modal-secondary:hover { background: #e0e0e0; }
+
+      /* Tutorial Specific Lists */
+      .shortcut-list { list-style: none; padding: 0; margin: 0; }
+      .shortcut-list li { padding: 6px 0; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; font-size: 13px; }
+      .shortcut-key { background: #f0f0f0; padding: 2px 6px; border-radius: 4px; font-family: monospace; font-weight: bold; color: var(--primary-red); font-size: 11px; }
+
+      /* Toast Notification */
+      .toast-notification {
+        position: fixed;
+        bottom: 25px;
+        left: 50%;
+        transform: translateX(-50%) translateY(100px);
+        background: #333;
+        color: white;
+        padding: 10px 20px;
+        border-radius: 30px;
+        font-size: 13px;
+        font-weight: 500;
+        z-index: 30000;
+        opacity: 0;
+        transition: all 0.3s ease;
+        pointer-events: none;
+      }
+      .toast-notification.show {
+        transform: translateX(-50%) translateY(0);
+        opacity: 1;
+      }
+
+      /* 6. RESPONSIVE MOBILE STYLES  */
+      @media (max-width: 768px) {
+        #quadro-layout { flex-direction: column; }
+        #sidebar { 
+          width: 70px; 
+          background: var(--panel-bg); 
+          border-right: 1px solid var(--border-color); 
+          display: flex; 
+          flex-direction: column; 
+          align-items: center; 
+          gap: 12px; 
+          padding: 12px 0; 
+          overflow-y: visible; 
+          overflow-x: visible;
+          flex-shrink: 0;
+          position: relative; 
+          z-index: 10; 
+        }
+        #right-controls { 
+          width: 100%; 
+          height: auto; 
+          flex-direction: row; 
+          flex-wrap: wrap; 
+          justify-content: center; 
+          border-left: none; 
+          border-top: 1px solid var(--border-color);
+          padding: 6px;
+        }
+        .color-grid { grid-template-columns: repeat(4, 1fr); }
+        .action-btn { width: auto; padding: 6px 10px; }
+        .game-container { flex-direction: column; gap: 20px; }
+        #hangman-canvas { border-right: none; border-bottom: 1px solid #eee; }
+      }
+
+      #mobile-warning-overlay {
+        display: none;
+      }
+
+      @media (max-width: 768px) {
+        #mobile-warning-overlay {
+          display: flex;
+          position: fixed;
+          top: 0;
+          left: 0;
+          width: 100vw;
+          height: 100vh;
+          background-color: var(--bg-main);
+          z-index: 99999;
+          justify-content: center;
+          align-items: center;
+          padding: 20px;
+          box-sizing: border-box;
+          text-align: center;
+        }
+
+        .mobile-warning-card {
+          background: #ffffff;
+          border: 1px solid var(--border-color);
+          border-radius: 16px;
+          padding: 30px 20px;
+          box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+          max-width: 400px;
+        }
+
+        .mobile-warning-icon {
+          font-size: 48px;
+          color: var(--primary-red);
+          margin-bottom: 16px;
+        }
+
+        .mobile-warning-card h2 {
+          margin: 0 0 12px 0;
+          color: var(--text-color);
+          font-size: 20px;
+        }
+
+        .mobile-warning-card p {
+          margin: 8px 0;
+          color: #666666;
+          font-size: 14px;
+          line-height: 1.5;
+        }
+      }
+
+      .sidebar-links-group {
+        margin-top: auto; 
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        align-items: center;
+        padding-bottom: 8px;
+      }
+
+      .sidebar-link-btn {
+        font-size: 18px;
+        color: #444;
+        text-decoration: none;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 36px;
+        height: 36px;
+        border-radius: 10px;
+        border: 1px solid #eee;
+        background: #fff;
+        transition: all 0.2s ease;
+      }
+
+      .sidebar-link-btn:hover {
+        transform: scale(1.08);
+        border-color: var(--primary-red);
+        color: var(--primary-red);
+        background: #fff5f5;
+      }
+
+      .sidebar-link-btn.maps:hover { color: #ea4335; border-color: #ea4335; background: #fff0f0; }
+
+      .brush-size-container input[type="range"] {
+        -webkit-appearance: none;
+        appearance: none;
+        width: 100%;
+        height: 6px;
+        background: #e0e0e0;
+        border-radius: 3px;
+        outline: none;
+        cursor: pointer;
+      }
+
+      .brush-size-container input[type="range"]::-webkit-slider-thumb {
+        -webkit-appearance: none;
+        appearance: none;
+        width: 16px;
+        height: 16px;
+        border-radius: 50%;
+        background: var(--primary-red);
+        cursor: pointer;
+        transition: transform 0.15s ease, background-color 0.15s ease;
+      }
+
+      .brush-size-container input[type="range"]::-webkit-slider-thumb:hover {
+        transform: scale(1.2);
+        background: var(--primary-red-hover);
+      }
+
+      .brush-size-container input[type="range"]::-moz-range-thumb {
+        width: 16px;
+        height: 16px;
+        border: none;
+        border-radius: 50%;
+        background: var(--primary-red);
+        cursor: pointer;
+        transition: transform 0.15s ease, background-color 0.15s ease;
+      }
+
+      .brush-size-container input[type="range"]::-moz-range-thumb:hover {
+        transform: scale(1.2);
+        background: var(--primary-red-hover);
+      }
+
+      .sidebar-link-btn, .side-item {
+        position: relative; 
+      }
+
+      .sidebar-link-btn[data-tooltip]::after,
+      .side-item[data-tooltip]::after {
+        content: attr(data-tooltip);
+        position: absolute;
+        left: 115%;
+        top: 50%;
+        transform: translateY(-50%) translateX(-5px);
+        background-color: #c20000;
+        color: #ffffff;
+        padding: 5px 9px;
+        border-radius: 6px;
+        font-size: 11px;
+        font-weight: 500;
+        white-space: nowrap;
+        pointer-events: none;
+        opacity: 0;
+        visibility: hidden;
+        transition: all 0.2s ease-in-out;
+        box-shadow: 0 4px 10px rgba(0, 0, 0, 0.15);
+        z-index: 99999;
+      }
+
+      #right-controls [data-tooltip]::after {
+        right: 115%;
+        left: auto;
+      }
+
+      .sidebar-link-btn:hover::after,
+      .side-item:hover::after {
+        opacity: 1;
+        visibility: visible;
+        transform: translateY(-50%) translateX(0);
+      }
+    </style>
+  </head>
+  <body>
+
+    <!-- TOP NAVIGATION BAR -->
+    <div class="top-bar">
+      <div class="top-bar-left">
+        <span>Superboard</span>
+        <button class="tutorial-btn" onclick="openModal('tutorialModal')"><i class="fa-solid fa-book-open"></i> Aprenda a usar</button>
+      </div>
+      <span>@dicarvalho.prof | Educação do futuro</span>
+    </div>
+
+    <!-- TABS NAVIGATION -->
+    <div class="nav-tabs">
+      <div class="tab active" onclick="switchTab('Quadro', this)"><i class="fa-solid fa-pen-to-square"></i> whiteboard</div>
+      <div class="tab" onclick="switchTab('Modo-game', this)"><i class="fa-solid fa-gamepad"></i> Game mode</div>
+    </div>
+
+    <!-- MAIN WHITEBOARD SCREEN -->
+    <div id="screen-Quadro">
+      <div id="quadro-layout">
+        <!-- Left Sidebar Tools -->
+        <div id="sidebar">
+          <div class="side-item" onclick="openIconModal()" data-tooltip="Adicionar Ícone"><i class="fa-solid fa-icons"></i></div>
+          <div class="side-item" onclick="addPostIt()" data-tooltip="Post-it"><i class="fa-regular fa-note-sticky"></i></div>
+          <div class="side-item" onclick="addCircleFrame()" data-tooltip="Destaque"><i class="fa-regular fa-circle"></i></div>
+          
+          <hr style="width: 60%; border: 0; border-top: 1px solid #eee; margin: 2px 0;">
+
+          <!-- AI FEATURE BUTTONS -->
+          <div class="side-item" onclick="triggerAiTranslate()" data-tooltip="AI Translation"><i class="fa-solid fa-language"></i></div>
+          <div class="side-item" onclick="triggerAiCorrection()" data-tooltip="AI Correct Text"><i class="fa-solid fa-wand-magic-sparkles"></i></div>
+          <div class="side-item" onclick="triggerAiExamples()" data-tooltip="AI Real Life Examples"><i class="fa-solid fa-lightbulb"></i></div>
+          <div class="side-item" onclick="triggerAiDialogue()" data-tooltip="AI 4-Turn Dialogue"><i class="fa-solid fa-comments"></i></div>
+
+          <div class="side-item" onclick="openModal('licenseModal')" data-tooltip="Termos de Uso / Licença"><i class="fa-solid fa-scale-balanced"></i></div>
+        
+          <!-- EXTERNAL LINKS SECTION -->
+          <div class="sidebar-links-group">
+            <a href="https://images.google.com/" target="_blank" rel="noopener noreferrer" class="sidebar-link-btn" data-tooltip="Google Imagens">
+              <i class="fa-solid fa-image"></i>
+            </a>
+          </div>
+        </div>
+
+        <!-- Central Canvas Board -->
+        <div id="canvas-container">
+          <canvas id="whiteboard"></canvas>
+        </div>
+
+        <!-- Right Controls & Brush Customisations -->
+        <div id="right-controls">
+          <span class="control-label">Mais cores</span>
+          <div class="color-picker-wrapper">
+            <label for="brush-color-picker" class="side-item color-picker-btn" data-tooltip="Make your color">
+              <i class="fa-solid fa-palette"></i>
+            </label>
+            <input type="color" id="brush-color-picker" value="#000000" onchange="updateBrushFromColorPicker(this.value)">
+          </div>
+          
+          <div class="color-grid">
+            <div class="color-circle active" style="background: black;" onclick="updateBrushColor('black', this)"></div>
+            <div class="color-circle" style="background: #c00000;" onclick="updateBrushColor('#c00000', this)"></div>
+            <div class="color-circle" style="background: #3d85c6;" onclick="updateBrushColor('#3d85c6', this)"></div>
+            <div class="color-circle" style="background: #6aa84f;" onclick="updateBrushColor('#6aa84f', this)"></div>
+            <div class="color-circle" style="background: #f1c232;" onclick="updateBrushColor('#f1c232', this)"></div>
+            <div class="color-circle" style="background: #8e7cc3;" onclick="updateBrushColor('#8e7cc3', this)"></div>
+          </div>
+
+          <span class="control-label" onclick="undo()"><i class="fa-solid fa-brush"></i> Size</span>
+          <div class="brush-size-container">
+            <input type="range" id="brush-size" min="1" max="40" value="3" oninput="updateBrushSize(this.value)">
+          </div>
+          <button id="draw-toggle-btn" class="action-btn" onclick="toggleDrawingMode()">
+            <i class="fa-solid fa-mouse-pointer"></i> SELEÇÃO
+          </button>
+          <hr style="width: 80%; border: 0; border-top: 1px solid #eee; margin: 4px 0;">
+
+          <button class="action-btn" onclick="undo()"><i class="fa-solid fa-rotate-left"></i> DESFAZER</button>
+          <button class="action-btn" onclick="promptDeleteSelected()" style="color:red;"><i class="fa-solid fa-trash-can"></i> EXCLUIR</button>
+          <button class="action-btn" onclick="promptClearBoard()"><i class="fa-solid fa-broom"></i> LIMPAR</button>
+
+          <hr style="width: 80%; border: 0; border-top: 1px solid #eee; margin: 4px 0;">
+          <button class="action-btn" onclick="downloadCanvas()" style="background: #eef9ee; border-color: #9cdb9c;"><i class="fa-solid fa-download"></i> BAIXAR</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- GAME MODE SCREEN -->
+    <div id="screen-Modo-game" class="screen-content">
+      <div style="text-align: center; margin-bottom: 20px;">
+        <button class="phrase-btn" style="width:auto; padding: 10px 20px; font-weight:bold; background: var(--primary-red); color: white;" onclick="startHangman()">SORTEAR PALAVRA DO QUADRO</button>
+      </div>
+      <div class="game-container">
+        <canvas id="hangman-canvas" width="180" height="220"></canvas>
+        <div>
+           <div id="hangman-word-display">_ _ _ _ _</div>
+           <div id="game-message-area" style="text-align:center; height: 30px; margin-top: 10px;">
+             <p id="game-message" style="font-weight:bold; font-size: 16px; margin:0;"></p>
+           </div>
+        </div>
+        <div class="keyboard-grid" id="game-keyboard"></div>
+      </div>
+    </div>
+
+    <!-- MODAL: Font Awesome Icon Selection -->
+    <div id="iconModal" class="modal-overlay" onclick="if(event.target === this) closeModal('iconModal')">
+      <div class="modal-card">
+        <h3><i class="fa-solid fa-icons"></i> Selecione um Ícone</h3>
+        <div class="icon-grid" id="icon-picker-grid"></div>
+        <div class="modal-actions">
+          <button class="btn-modal btn-modal-secondary" onclick="closeModal('iconModal')">Cancelar</button>
+        </div>
+      </div>
+    </div>
+
+   <!-- MODAL: Confirmations -->
+<div id="confirmModal" class="modal-overlay" onclick="if(event.target === this) closeConfirmModal()">
+    <div class="modal-card" style="text-align: center;">
+      <h3 id="confirmModalTitle">Confirmação</h3>
+      <p id="confirmModalMessage" style="font-size: 14px; color: #555; margin-bottom: 20px;"></p>
+      <div class="modal-actions">
+        <button class="btn-modal btn-modal-secondary" onclick="closeConfirmModal()">Cancelar</button>
+        <button id="confirmModalActionBtn" class="btn-modal btn-modal-primary">Confirmar</button>
+      </div>
+    </div>
+  </div>
+
+    <!-- MODAL: Dialogue AI Level Selection -->
+    <div id="dialogueModal" class="modal-overlay" onclick="if(event.target === this) closeModal('dialogueModal')">
+      <div class="modal-card" style="text-align: center;">
+        <h3><i class="fa-solid fa-comments"></i> Gerar Diálogo (4 Turnos)</h3>
+        <p style="font-size: 13px; color: #555;">Selecione o nível de proficiência para a conversa:</p>
+        <div style="display: flex; flex-direction: column; gap: 8px; margin: 15px 0;">
+          <button class="btn-modal btn-modal-secondary" onclick="submitDialogueRequest('A1-A2')">Iniciante (A1-A2)</button>
+          <button class="btn-modal btn-modal-secondary" onclick="submitDialogueRequest('B1-B2')">Intermediário (B1-B2)</button>
+          <button class="btn-modal btn-modal-secondary" onclick="submitDialogueRequest('C1-C2')">Avançado (C1-C2)</button>
+        </div>
+        <button class="btn-modal btn-modal-secondary" style="width: 100%;" onclick="closeModal('dialogueModal')">Cancelar</button>
+      </div>
+    </div>
+
+    <!-- MODAL: Tutorial Dialog -->
+    <div id="tutorialModal" class="modal-overlay" onclick="if(event.target === this) closeModal('tutorialModal')">
+      <div class="modal-card">
+        <h3>🎓 Tutorial Rápido</h3>
+        
+        <h4 style="margin: 10px 0 6px 0; color: #555; font-size: 13px;">⌨️ Atalhos</h4>
+        <ul class="shortcut-list">
+          <li><span>✏️ Modo desenho</span><span class="shortcut-key">Ctrl + L</span></li>
+          <li><span>🔍 Modo seleção</span><span class="shortcut-key">Ctrl + S</span></li>
+          <li><span>↩️ Desfazer</span><span class="shortcut-key">Ctrl + Z</span></li>
+          <li><span>🗑️ Excluir</span><span class="shortcut-key">Delete</span></li>
+        </ul>
+        
+        <h4 style="margin: 12px 0 6px 0; color: #555; font-size: 13px;">🖱️ Cliques</h4>
+        <ul class="shortcut-list">
+          <li><span>📝 Duplo clique</span><span>Adicionar texto</span></li>
+          <li><span>🎨 Cores / Espessura</span><span>Mudar pincel</span></li>
+        </ul>
+        
+        <button class="btn-modal btn-modal-primary" style="width: 100%; margin-top: 15px;" onclick="closeModal('tutorialModal')">Entendi!</button>
+      </div>
+    </div>
+
+    <!-- MODAL: License & Terms of Use -->
+    <div id="licenseModal" class="modal-overlay" onclick="if(event.target === this) closeModal('licenseModal')">
+      <div class="modal-card" style="text-align: center;">
+        <h3><i class="fa-solid fa-scale-balanced"></i> Licença & Termos de Uso</h3>
+        
+        <div style="text-align: left; font-size: 13px; color: #444; line-height: 1.6; margin: 15px 0;">
+          <p style="margin-bottom: 10px;">
+            <strong>Uso Restrito:</strong> Esta ferramenta é parte integrante do curso de Inglês da @dicarvalho.prof e não pode ser utilizado, distribuído ou comercializado sem a expressa permissão da desenvolvedora.
+          </p>
+          
+        </div>
+    
+        <button class="btn-modal btn-modal-primary" style="width: 100%; margin-top: 10px;" onclick="closeModal('licenseModal')">Entendi</button>
+      </div>
+    </div>
+
+    <!-- Toast Notification Container -->
+    <div id="toast" class="toast-notification"></div>
+
+    <!-- APPLICATION JAVASCRIPT ENGINE -->
+    <script>
+      /* ==========================================================================
+         MODULE 3.1: GOOGLE APPS SCRIPT AI INTEGRATION (FIXED FOR GITHUB PAGES)
+         ========================================================================== */
+      const BACKEND_URL = "https://script.google.com/macros/s/AKfycbxqg3DReTJhZlc_pGbYOA2R7iVlwGfnAZPHWdjHUrlrFhZYFuDfU0Q5spImHNwK20hX/exec";
+
+      function getSelectedTextOrPrompt() {
+        const activeObj = canvas ? canvas.getActiveObject() : null;
+        if (activeObj && (activeObj.type === 'textbox' || activeObj.type === 'text' || activeObj.type === 'i-text')) {
+          return activeObj.text;
+        }
+        return null;
+      }
+
+      async function executeAiRequest(actionType, promptText, extraParam = null) {
+        if (!promptText || !promptText.trim()) {
+          showLongOperationToast("Select a text on the board first!");
+          return;
+        }
+
+        showLongOperationToast("Thinking...");
+
+        try {
+          const response = await fetch(BACKEND_URL, {
+            method: "POST",
+            mode: "cors",
+            redirect: "follow",
+            headers: {
+              "Content-Type": "text/plain;charset=utf-8"
+            },
+            body: JSON.stringify({
+              actionType: actionType,
+              promptText: promptText,
+              extraParam: extraParam
+            })
+          });
+
+          const result = await response.json();
+
+          if (result.success) {
+            
+            
+            const activeObj = canvas.getActiveObject();
+            const left = activeObj ? activeObj.left + activeObj.width + 20 : 120;
+            const top = activeObj ? activeObj.top : 120;
+
+            addAiResponseToBoard(result.response, left, top);
+          } else {
+            showLongOperationToast("Error: " + (result.error || "Request failed"));
+          }
+        } catch (error) {
+          showLongOperationToast("Connection error!");
+          console.error("AI Request Failed:", error);
+        }
+      }
+
+      /* ==========================================================================
+         MODULE 1: STATE & CANVAS ENGINE INITIALISATION
+         ========================================================================== */
+      let canvas = null;
+      let history = [];
+      const MAX_HISTORY_STEPS = 20;
+
+      window.addEventListener('load', () => {
+        initCanvas();
+        setupResizeListener();
+        setupKeyboardShortcuts();
+        populateIconPicker();
+        
+        // Hangman init
+        createKeyboard();
+        drawHangman(0);
+      });
+
+      function initCanvas() {
+        const container = document.getElementById('canvas-container');
+        canvas = new fabric.Canvas('whiteboard', {
+          width: container.clientWidth - 20,
+          height: container.clientHeight - 20,
+          backgroundColor: '#ffffff',
+          isDrawingMode: false
+        });
+
+        canvas.freeDrawingBrush.color = '#000000';
+        canvas.freeDrawingBrush.width = 3;
+
+        canvas.on('mouse:dblclick', (opt) => {
+  // Ensure drawing mode is disabled when inserting text
+  canvas.isDrawingMode = false;
+  if (typeof updateDrawingBtnUI === 'function') {
+    updateDrawingBtnUI();
+  }
+
+  const pointer = canvas.getPointer(opt.e);
+  
+  const textbox = new fabric.Textbox("", {
+    placeholder: "Type here...",
+    left: pointer.x,
+    top: pointer.y,
+    width: 200,
+    fontSize: 35,
+    fill: canvas.freeDrawingBrush.color || '#000000',
+    splitByGrapheme: false,
+    lockUniScaling: true
+  });
+
+  canvas.add(textbox);
+  canvas.setActiveObject(textbox);
+  textbox.enterEditing();
+});
+
+        canvas.on('object:added', pushHistoryState);
+        canvas.on('object:modified', pushHistoryState);
+        canvas.on('object:removed', pushHistoryState);
+        
+        // Textbox scaling handler: adjusts width without scaling font-size when pulling side handles
+        canvas.on('object:scaling', (e) => {
+          const obj = e.target;
+          if (obj && obj.type === 'textbox') {
+            const transform = canvas._currentTransform;
+            if (!transform) return;
+
+            const corner = transform.corner;
+            if (corner === 'mr' || corner === 'ml') {
+              const newWidth = obj.width * obj.scaleX;
+              obj.set({
+                width: Math.max(newWidth, 50),
+                scaleX: 1,
+                scaleY: 1
+              });
+            }
+          }
+        });
+
+        // Object moving handler: bounds objects inside canvas edges
+        canvas.on('object:moving', (e) => {
+          const obj = e.target;
+          if (!obj) return;
+
+          const bound = obj.getBoundingRect();
+          const canvasWidth = canvas.getWidth();
+          const canvasHeight = canvas.getHeight();
+
+          if (bound.left < 0) obj.left = obj.left - bound.left;
+          if (bound.top < 0) obj.top = obj.top - bound.top;
+          if (bound.left + bound.width > canvasWidth) {
+            obj.left = canvasWidth - bound.width;
+          }
+          if (bound.top + bound.height > canvasHeight) {
+            obj.top = canvasHeight - bound.height;
+          }
+        });
+
+        pushHistoryState();
+      }
+
+      function setupResizeListener() {
+        window.addEventListener('resize', () => {
+          const container = document.getElementById('canvas-container');
+          if (canvas && container) {
+            canvas.setWidth(container.clientWidth - 20);
+            canvas.setHeight(container.clientHeight - 20);
+            canvas.renderAll();
+          }
+        });
+      }
+
+      /* ==========================================================================
+         MODULE 2: HISTORY STACK & TOOL OPERATIONS
+         ========================================================================== */
+      function pushHistoryState() {
+        if (!canvas || !canvas.toJSON) return;
+        history.push(JSON.stringify(canvas));
+        if (history.length > MAX_HISTORY_STEPS) {
+          history.shift();
+        }
+      }
+
+      function undo() {
+        if (history.length > 1) {
+          history.pop();
+          const prevState = history[history.length - 1];
+          canvas.loadFromJSON(prevState, () => {
+            canvas.renderAll();
+          });
+        } else {
+          canvas.clear();
+          canvas.backgroundColor = '#ffffff';
+          canvas.renderAll();
+          history = [];
+        }
+      }
+
+      function promptClearBoard() {
+        openConfirmModal(
+          "Limpar Quadro", 
+          "Tem certeza de que deseja apagar todo o conteúdo do quadro?", 
+          () => {
+            canvas.clear();
+            canvas.backgroundColor = '#ffffff';
+            canvas.renderAll();
+            history = [];
+            pushHistoryState();
+          }
+        );
+      }
+
+      function promptDeleteSelected() {
+        const activeObjects = canvas.getActiveObjects();
+        if (!activeObjects.length) return;
+
+        openConfirmModal(
+          "Excluir Elementos", 
+          `Deseja remover os ${activeObjects.length} item(ns) selecionados?`, 
+          () => {
+            activeObjects.forEach(obj => canvas.remove(obj));
+            canvas.discardActiveObject().renderAll();
+          }
+        );
+      }
+
+      function updateBrushFromColorPicker(hex) {
+        updateBrushColor(hex);
+      }
+
+      function updateBrushColor(colorHex, element = null) {
+        canvas.isDrawingMode = true;
+        canvas.freeDrawingBrush.color = colorHex;
+
+        const validHex = colorHex.startsWith('#') ? colorHex : '#000000';
+        document.getElementById('brush-color-picker').value = validHex;
+
+        document.querySelectorAll('.color-circle').forEach(el => el.classList.remove('active'));
+        if (element) {
+          element.classList.add('active');
+        }
+      }
+
+      function updateBrushSize(size) {
+        canvas.isDrawingMode = true;
+        canvas.freeDrawingBrush.width = parseInt(size, 10) || 3;
+      }
+
+      function addPostIt() {
+        canvas.add(new fabric.Rect({ 
+          width: 120, height: 120, fill: '#ffcccc', opacity: 0.8, left: 100, top: 100 
+        }));
+        canvas.isDrawingMode = false;
+      }
+
+      function addCircleFrame() {
+        canvas.add(new fabric.Circle({ 
+          radius: 40, fill: 'transparent', stroke: 'red', strokeWidth: 3, left: 150, top: 150 
+        }));
+        canvas.isDrawingMode = false;
+      }
+
+      function downloadCanvas() {
+  showLongOperationToast("Gerando imagem para download...");
+  
+  // Format today's date as YYYY-MM-DD
+  const today = new Date();
+  const year = today.getFullYear();
+  const month = String(today.getMonth() + 1).padStart(2, '0');
+  const day = String(today.getDate()).padStart(2, '0');
+  const formattedDate = `${year}-${month}-${day}`;
+
+  setTimeout(() => {
+    const link = document.createElement('a');
+    link.download = `aula-superboard-${formattedDate}.png`;
+    link.href = canvas.toDataURL({ format: 'png', quality: 1.0 });
+    link.click();
+  }, 1100);
+}
+
+      /* ==========================================================================
+         MODULE 3: AI INTEGRATION HANDLERS
+         ========================================================================== */
+      function triggerAiTranslate() {
+        const text = getSelectedTextOrPrompt();
+        if (!text) {
+          showLongOperationToast("Select or create text first!");
+          return;
+        }
+        executeAiRequest("translate", text);
+      }
+
+      function triggerAiCorrection() {
+        const text = getSelectedTextOrPrompt();
+        if (!text) {
+          showLongOperationToast("Select or create text first!");
+          return;
+        }
+        executeAiRequest("correct", text);
+      }
+
+      function triggerAiExamples() {
+        const text = getSelectedTextOrPrompt();
+        if (!text) {
+          showLongOperationToast("Select a word or phrase on the board!");
+          return;
+        }
+        executeAiRequest("examples", text);
+      }
+
+      function triggerAiDialogue() {
+        const text = getSelectedTextOrPrompt();
+        if (!text) {
+          showLongOperationToast("Select a phrase or topic on the board!");
+          return;
+        }
+        openModal('dialogueModal');
+      }
+
+      function submitDialogueRequest(level) {
+        closeModal('dialogueModal');
+        const text = getSelectedTextOrPrompt();
+        executeAiRequest("dialogue", text, level);
+      }
+
+      /* ==========================================================================
+         MODULE 3.2: AI RESPONSE BOARD DISPLAY
+         ========================================================================== */
+      function addAiResponseToBoard(responseContent, sourceObjLeft = 100, sourceObjTop = 100) {
+        if (!responseContent || responseContent.trim() === "") {
+          showLongOperationToast("⚠️ No response received from AI.");
+          return;
+        }
+
+        const aiTextbox = new fabric.Textbox(responseContent, {
+          left: sourceObjLeft,
+          top: sourceObjTop,
+          width: 320,
+          fontSize: 16,
+          fontFamily: 'Poppins, sans-serif',
+          fill: '#000000',
+          backgroundColor: 'transparent',
+          padding: 8,
+          borderColor: '#c00000',
+          cornerColor: '#c00000',
+          cornerSize: 8,
+          transparentCorners: false,
+          splitByGrapheme: false,
+          shadow: new fabric.Shadow({
+            color: 'rgba(0,0,0,0.1)',
+            blur: 10,
+            offsetX: 2,
+            offsetY: 4
+          })
+        });
+
+        canvas.add(aiTextbox);
+        canvas.setActiveObject(aiTextbox);
+        canvas.isDrawingMode = false;
+        canvas.renderAll();
+      }
+
+      /* ==========================================================================
+         MODULE 4: FONT AWESOME ICON PICKER & MODALS SYSTEM
+         ========================================================================== */
+      const AVAILABLE_ICONS = [
+        'fa-star', 'fa-heart', 'fa-thumbs-up', 'fa-check', 'fa-xmark', 
+        'fa-question', 'fa-lightbulb', 'fa-graduation-cap', 'fa-book', 'fa-pencil',
+        'fa-clock', 'fa-calendar', 'fa-location-dot', 'fa-comment', 'fa-envelope',
+        'fa-arrow-right', 'fa-arrow-left', 'fa-arrow-up', 'fa-arrow-down', 'fa-music',
+        'fa-camera', 'fa-globe', 'fa-bolt', 'fa-fire', 'fa-trophy'
+      ];
+
+      function populateIconPicker() {
+        const grid = document.getElementById('icon-picker-grid');
+        grid.innerHTML = '';
+        AVAILABLE_ICONS.forEach(iconClass => {
+          const div = document.createElement('div');
+          div.className = 'icon-option';
+          div.innerHTML = `<i class="fa-solid ${iconClass}"></i>`;
+          div.onclick = () => selectIcon(iconClass);
+          grid.appendChild(div);
+        });
+      }
+
+      function openIconModal() { openModal('iconModal'); }
+
+      function selectIcon(iconClass) {
+        closeModal('iconModal');
+        const tempI = document.createElement('i');
+        tempI.className = `fa-solid ${iconClass}`;
+        document.body.appendChild(tempI);
+        const charCode = window.getComputedStyle(tempI, ':before').getPropertyValue('content').replace(/"/g, '');
+        document.body.removeChild(tempI);
+
+        const iconText = new fabric.Text(charCode, {
+          fontFamily: '"Font Awesome 6 Free"',
+          fontWeight: '900',
+          fontSize: 40,
+          left: 100,
+          top: 100,
+          fill: canvas.freeDrawingBrush.color || '#333333'
+        });
+
+        canvas.add(iconText);
+        canvas.isDrawingMode = false;
+      }
+
+      function openModal(id) {
+        document.getElementById(id).classList.add('active');
+      }
+
+      function closeModal(id) {
+        document.getElementById(id).classList.remove('active');
+      }
+
+      let currentConfirmAction = null;
+
+function openConfirmModal(title, message, onConfirm) {
+  document.getElementById('confirmModalTitle').innerText = title;
+  document.getElementById('confirmModalMessage').innerText = message;
+  
+  currentConfirmAction = onConfirm;
+
+  const btn = document.getElementById('confirmModalActionBtn');
+  btn.onclick = () => {
+    executeAndCloseConfirm();
+  };
+
+  openModal('confirmModal');
+}
+
+function executeAndCloseConfirm() {
+  if (typeof currentConfirmAction === 'function') {
+    currentConfirmAction();
+  }
+  closeConfirmModal();
+}
+
+function closeConfirmModal() {
+  currentConfirmAction = null;
+  closeModal('confirmModal');
+}
+
+window.addEventListener('keydown', (e) => {
+  const confirmModal = document.getElementById('confirmModal');
+  const isModalActive = confirmModal && confirmModal.classList.contains('active');
+
+  if (isModalActive && e.key === 'Enter') {
+    e.preventDefault();
+    executeAndCloseConfirm();
+  }
+});
+
+      function showLongOperationToast(message) {
+        const toast = document.getElementById('toast');
+        toast.textContent = message;
+        toast.classList.add('show');
+        setTimeout(() => { toast.classList.remove('show'); }, 2500);
+      }
+
+      function setupKeyboardShortcuts() {
+        window.addEventListener('keydown', (e) => {
+          const activeObj = canvas ? canvas.getActiveObject() : null;
+          const isEditingText = activeObj && activeObj.isEditing;
+          if (document.activeElement.tagName === "INPUT" || isEditingText) return;
+
+          if (e.ctrlKey && e.key.toLowerCase() === 'l') { e.preventDefault(); canvas.isDrawingMode = true; }
+          if (e.ctrlKey && e.key.toLowerCase() === 's') { e.preventDefault(); canvas.isDrawingMode = false; }
+          if (e.key === "Delete") { promptDeleteSelected(); }
+          if (e.ctrlKey && e.key.toLowerCase() === 'z') { e.preventDefault(); undo(); }
+        });
+      }
+
+      function switchTab(name, el) { 
+        document.querySelectorAll('.tab').forEach(t => t.classList.remove('active')); 
+        el.classList.add('active'); 
+        document.querySelectorAll('[id^="screen-"]').forEach(s => s.style.display = 'none'); 
+        document.getElementById('screen-' + name).style.display = (name === 'Quadro') ? 'flex' : 'block'; 
+      }
+
+      function toggleDrawingMode() {
+  if (!canvas) return;
+  canvas.isDrawingMode = !canvas.isDrawingMode;
+  updateDrawingBtnUI();
+}
+
+function updateDrawingBtnUI() {
+  const btn = document.getElementById('draw-toggle-btn');
+  if (!btn || !canvas) return;
+
+  if (canvas.isDrawingMode) {
+    btn.innerHTML = '<i class="fa-solid fa-pen"></i> DESENHO';
+    btn.style.background = '#eef9ee';
+    btn.style.borderColor = '#9cdb9c';
+    btn.style.color = '#2e7d32';
+  } else {
+    btn.innerHTML = '<i class="fa-solid fa-mouse-pointer"></i> SELEÇÃO';
+    btn.style.background = '#fff';
+    btn.style.borderColor = '#ddd';
+    btn.style.color = '#444';
+  }
+}
+      /* ==========================================================================
+         MODULE 5: HANGMAN GAME ENGINE
+         ========================================================================== */
+      let secretWord = "", guessedLetters = [], errors = 0, usedWords = [];
+
+      function createKeyboard() { 
+        const kb = document.getElementById('game-keyboard'); 
+        kb.innerHTML = ''; 
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split('').forEach(l => { 
+          const btn = document.createElement('button'); 
+          btn.className = 'key-btn'; 
+          btn.innerText = l; 
+          btn.onclick = () => makeGuess(l, btn); 
+          kb.appendChild(btn); 
+        }); 
+      }
+      
+      function startHangman() {
+        const allTexts = canvas.getObjects().filter(obj => (obj.type === 'text' || obj.type === 'i-text' || obj.type === 'textbox') && obj.text.trim().length > 0);
+        if (allTexts.length === 0) { 
+          openConfirmModal("Modo Game", "Escreva algumas palavras no quadro primeiro para jogar!", () => {});
+          return; 
+        }
+
+        let wordsArray = [];
+        allTexts.forEach(obj => { 
+          const wordsInObject = obj.text.trim().toUpperCase().split(/\s+/); 
+          wordsInObject.forEach(word => { 
+            const cleanWord = word.replace(/[^A-ZÀ-Ú]/g, ""); 
+            if (cleanWord.length > 1) wordsArray.push(cleanWord); 
+          }); 
+        });
+
+        wordsArray = [...new Set(wordsArray)];
+        if (wordsArray.length === 0) { 
+          openConfirmModal("Modo Game", "Não foram encontradas palavras válidas no quadro.", () => {});
+          return; 
+        }
+
+        if (usedWords.length >= wordsArray.length) {
+          usedWords = [];
+        }
+
+        const availableWords = wordsArray.filter(w => !usedWords.includes(w));
+        secretWord = availableWords[Math.floor(Math.random() * availableWords.length)];
+        usedWords.push(secretWord);
+
+        guessedLetters = []; 
+        errors = 0; 
+        document.getElementById('game-message').innerHTML = "";
+        createKeyboard(); 
+        drawHangman(0); 
+        updateHangmanDisplay();
+      }
+      
+      function makeGuess(letter, btn) { 
+        if(!secretWord) return;
+        if(guessedLetters.includes(letter) || errors >= 6) return; 
+        
+        guessedLetters.push(letter); 
+        btn.style.visibility = 'hidden'; 
+        
+        if(!secretWord.includes(letter)) { 
+          errors++; 
+        } 
+        
+        drawHangman(errors); 
+        updateHangmanDisplay(); 
+        checkGameOver(); 
+      }
+      
+      function updateHangmanDisplay() { 
+        document.getElementById('hangman-word-display').innerText = secretWord.split('').map(l => guessedLetters.includes(l) ? l : '_').join(' '); 
+      }
+      
+      function checkGameOver() {
+        const msg = document.getElementById('game-message');
+        const isWin = secretWord && !document.getElementById('hangman-word-display').innerText.includes('_');
+        if(errors >= 6) { 
+          msg.innerHTML = `Pratique mais! 😉 A palavra era: <strong>${secretWord}</strong>`;
+        }
+        else if(isWin) { 
+          msg.innerText = "Parabéns!"; 
+          msg.style.color = "green";
+        }
+      }
+      
+      function drawHangman(step) {
+        const c = document.getElementById('hangman-canvas').getContext('2d');
+        c.clearRect(0, 0, 200, 250); 
+        c.lineWidth = 3; 
+        c.strokeStyle = '#333';
+        c.beginPath(); c.moveTo(20, 200); c.lineTo(160, 200); c.moveTo(40, 200); c.lineTo(40, 10); c.lineTo(110, 10); c.lineTo(110, 30); c.stroke();
+        if(step > 0) { c.beginPath(); c.arc(110, 50, 20, 0, Math.PI*2); c.stroke(); }
+        if(step > 1) { c.beginPath(); c.moveTo(110, 70); c.lineTo(110, 140); c.stroke(); }
+        if(step > 2) { c.beginPath(); c.moveTo(110, 85); c.lineTo(80, 110); c.stroke(); }
+        if(step > 3) { c.beginPath(); c.moveTo(110, 85); c.lineTo(140, 110); c.stroke(); }
+        if(step > 4) { c.beginPath(); c.moveTo(110, 140); c.lineTo(80, 180); c.stroke(); }
+        if(step > 5) { c.beginPath(); c.moveTo(110, 140); c.lineTo(140, 180); c.stroke(); }
+      }
+
+      /* ==========================================================================
+         MODULE 6: CLIPBOARD IMAGE PASTE HANDLER
+         ========================================================================== */
+      document.addEventListener('paste', function (e) {
+        const items = e.clipboardData && e.clipboardData.items;
+        if (!items) return;
+
+        for (let i = 0; i < items.length; i++) {
+          const item = items[i];
+          
+          if (item.type.indexOf('image') !== -1) {
+            const blob = item.getAsFile();
+            const reader = new FileReader();
+
+            reader.onload = function (event) {
+              const imgObj = new Image();
+              imgObj.src = event.target.result;
+
+              imgObj.onload = function () {
+                const fabricImg = new fabric.Image(imgObj, {
+                  left: canvas.width ? canvas.width / 4 : 150,
+                  top: canvas.height ? canvas.height / 4 : 150,
+                  selectable: true,
+                  hasControls: true,
+                  hasBorders: true,
+                  lockUniScaling: false,
+                  cornerColor: '#c00000',
+                  cornerSize: 8,
+                  transparentCorners: false,
+                  shadow: new fabric.Shadow({
+                    color: 'rgba(0,0,0,0.15)',
+                    blur: 8,
+                    offsetX: 2,
+                    offsetY: 4
+                  })
+                });
+
+                if (fabricImg.width > 400) {
+                  fabricImg.scaleToWidth(400);
+                }
+
+                canvas.add(fabricImg);
+                canvas.setActiveObject(fabricImg);
+                canvas.renderAll();
+                
+                if (typeof showLongOperationToast === 'function') {
+                  showLongOperationToast("🖼️ Image pasted!");
+                }
+              };
+            };
+
+            reader.readAsDataURL(blob);
+            e.preventDefault();
+            break;
+          }
+        }
+      });
+    </script>
+
+    <!-- MOBILE ONLY WARNING OVERLAY -->
+    <div id="mobile-warning-overlay">
+      <div class="mobile-warning-card">
+        <i class="fa-solid fa-desktop mobile-warning-icon"></i>
+        <h2>Aviso de Compatibilidade</h2>
+        <p>Este quadro interativo foi desenvolvido para uso em computadores e notebooks.</p>
+        <p>Para aproveitar todas as funcionalidades de desenho e ferramentas, acesse esta página através de um computador.</p>
+      </div>
+    </div>
+  </body>
+</html>
