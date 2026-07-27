@@ -621,7 +621,7 @@
         <div id="sidebar">
           <div class="side-item" onclick="openIconModal()" data-tooltip="Adicionar ícone"><i class="fa-solid fa-icons"></i></div>
           <div class="side-item" onclick="addPostIt()" data-tooltip="Post-it"><i class="fa-regular fa-note-sticky"></i></div>
-          <div class="side-item" onclick="addCircleFrame()" data-tooltip="Destaque"><i class="fa-regular fa-circle"></i></div>
+          <div class="side-item" id="caption-btn" onclick="toggleCaptionMode()" data-tooltip="Caption Mode"><i class="fa-solid fa-closed-captioning"></i></div>
           
           <hr style="width: 60%; border: 0; border-top: 1px solid #eee; margin: 2px 0;">
 
@@ -643,6 +643,10 @@
 
         <!-- Central Canvas Board -->
         <div id="canvas-container">
+            <!-- Live Speech Preview Bar -->
+<div id="caption-preview-bar" style="display:none; position:absolute; top:20px; left:50%; transform:translateX(-50%); background:rgba(0,0,0,0.85); color:#fff; padding:8px 18px; border-radius:20px; font-size:14px; font-family:'Poppins', sans-serif; z-index:100; pointer-events:none; max-width:80%; text-align:center; box-shadow: 0 4px 12px rgba(0,0,0,0.2);">
+    <i class="fa-solid fa-microphone" style="color: #c00000; margin-right: 8px;"></i> <span id="caption-preview-text">Listening...</span>
+  </div>
           <canvas id="whiteboard"></canvas>
         </div>
 
@@ -783,433 +787,624 @@
 
     <!-- APPLICATION JAVASCRIPT ENGINE -->
     <script>
-      const BACKEND_URL = "https://script.google.com/macros/s/AKfycbxqg3DReTJhZlc_pGbYOA2R7iVlwGfnAZPHWdjHUrlrFhZYFuDfU0Q5spImHNwK20hX/exec";
+        const BACKEND_URL = "https://script.google.com/macros/s/AKfycbxqg3DReTJhZlc_pGbYOA2R7iVlwGfnAZPHWdjHUrlrFhZYFuDfU0Q5spImHNwK20hX/exec";
+  
+        // --- CAPTION MODE VARIABLES ---
+      let isCaptionModeListening = false;
+      let isCaptioningActive = false;
+      let captionTextbox = null;
+      let recognition = null;
+      let accumulatedTranscript = ""; // Holds finalized text across pauses
 
-      function getStoredToken() {
-        return localStorage.getItem('superboard_token') || "";
-      }
+      const limitReachedSound = new Audio("https://res.cloudinary.com/dbwqwgbtx/video/upload/v1780071232/soundshelfstudio-ui-success-chime-513565_up13as.mp3");
 
-      function getSelectedTextOrPrompt() {
-        const activeObj = canvas ? canvas.getActiveObject() : null;
-        if (activeObj && (activeObj.type === 'textbox' || activeObj.type === 'text' || activeObj.type === 'i-text')) {
-          return activeObj.text;
-        }
-        return null;
-      }
+      // --- SPEECH RECOGNITION ENGINE ---
+      function initCaptionSpeechRecognition() {
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 
-      async function executeAiRequest(actionType, promptText, extraParam = null) {
-        const userToken = getStoredToken();
-
-        if (!userToken) {
-          showLongOperationToast("Acesso negado. Digite a senha primeiro.");
-          openModal('authModal');
-          return;
-        }
-
-        if (actionType !== "verifyToken" && (!promptText || !promptText.trim())) {
-          showLongOperationToast("Selecione um texto no quadro primeiro!");
-          return;
-        }
-
-        if (actionType !== "verifyToken") {
-          showLongOperationToast("Processando...");
-        }
-
-        try {
-          const response = await fetch(BACKEND_URL, {
-            method: "POST",
-            mode: "cors",
-            redirect: "follow",
-            headers: {
-              "Content-Type": "text/plain;charset=utf-8"
-            },
-            body: JSON.stringify({
-              actionType: actionType,
-              promptText: promptText || "verify",
-              extraParam: extraParam,
-              authToken: userToken,
-              origin: window.location.origin
-            })
-          });
-
-          const result = await response.json();
-
-          if (result.success) {
-            if (actionType === "verifyToken") {
-              closeModal('authModal');
-              showLongOperationToast("Acesso liberado com sucesso!");
-              return true;
-            }
-
-            const activeObj = canvas.getActiveObject();
-            const left = activeObj ? activeObj.left + activeObj.width + 20 : 120;
-            const top = activeObj ? activeObj.top : 120;
-
-            addAiResponseToBoard(result.response, left, top);
-          } else {
-            showLongOperationToast("Erro: " + (result.error || "Falha na requisição"));
-            if (result.error && result.error.toLowerCase().includes("unauthorized")) {
-              localStorage.removeItem('superboard_token');
-              openModal('authModal');
-            }
-            return false;
-          }
-        } catch (error) {
-          showLongOperationToast("Erro de conexão!");
-          console.error("AI Request Failed:", error);
+        if (!SpeechRecognition) {
+          showLongOperationToast("Speech Recognition is not supported in this browser.");
           return false;
         }
-      }
 
-      let canvas = null;
-      let history = [];
-      const MAX_HISTORY_STEPS = 20;
+        recognition = new SpeechRecognition();
+        recognition.continuous = true;
+        recognition.interimResults = true;
+        recognition.lang = 'en-US';
 
-      window.addEventListener('load', () => {
-        initCanvas();
-        setupResizeListener();
-        setupKeyboardShortcuts();
-        populateIconPicker();
-        checkAuthOnLoad();
-        
-        createKeyboard();
-        drawHangman(0);
-      });
+        recognition.onresult = (event) => {
+          let interimTranscript = '';
+          let finalChunk = '';
 
-      function checkAuthOnLoad() {
-        const savedToken = getStoredToken();
-        if (savedToken) {
-          executeAiRequest("verifyToken", "check");
-        } else {
-          openModal('authModal');
-        }
-      }
-
-      async function saveAuthToken() {
-        const input = document.getElementById('auth-token-input');
-        const token = input.value.trim();
-        const confirmBtn = document.getElementById('authModalConfirmBtn');
-        
-        if (!token) {
-          showLongOperationToast("Por favor, digite a chave de acesso.");
-          return;
-        }
-
-        // 1. Preserve size and show centered spinner
-        const originalText = confirmBtn.innerHTML;
-        confirmBtn.disabled = true;
-        confirmBtn.classList.add('btn-loading');
-        confirmBtn.innerHTML = '<span class="btn-spinner"></span>';
-        
-        // 2. Execute verification
-        localStorage.setItem('superboard_token', token);
-        const isValid = await executeAiRequest("verifyToken", "check");
-        
-        if (!isValid) {
-          input.value = "";
-        }
-
-        // 3. Restore original button layout and text
-        confirmBtn.disabled = false;
-        confirmBtn.classList.remove('btn-loading');
-        confirmBtn.innerHTML = originalText;
-      }
-
-      function initCanvas() {
-        const container = document.getElementById('canvas-container');
-        canvas = new fabric.Canvas('whiteboard', {
-          width: container.clientWidth - 20,
-          height: container.clientHeight - 20,
-          backgroundColor: '#ffffff',
-          isDrawingMode: false
-        });
-
-        canvas.freeDrawingBrush.color = '#000000';
-        canvas.freeDrawingBrush.width = 3;
-
-        canvas.on('mouse:dblclick', (opt) => {
-          canvas.isDrawingMode = false;
-          updateDrawingBtnUI();
-
-          const pointer = canvas.getPointer(opt.e);
-          
-          const textbox = new fabric.Textbox("", {
-            placeholder: "Digite aqui...",
-            left: pointer.x,
-            top: pointer.y,
-            width: 200,
-            fontSize: 28,
-            fontFamily: 'Poppins, sans-serif',
-            fill: canvas.freeDrawingBrush.color || '#000000',
-            splitByGrapheme: false,
-            lockUniScaling: true
-          });
-
-          canvas.add(textbox);
-          canvas.setActiveObject(textbox);
-          textbox.enterEditing();
-        });
-
-        canvas.on('object:added', pushHistoryState);
-        canvas.on('object:modified', pushHistoryState);
-        canvas.on('object:removed', pushHistoryState);
-
-        pushHistoryState();
-      }
-
-      function setupResizeListener() {
-        window.addEventListener('resize', () => {
-          const container = document.getElementById('canvas-container');
-          if (canvas && container) {
-            canvas.setWidth(container.clientWidth - 20);
-            canvas.setHeight(container.clientHeight - 20);
-            canvas.renderAll();
+          for (let i = event.resultIndex; i < event.results.length; ++i) {
+            if (event.results[i].isFinal) {
+              finalChunk += event.results[i][0].transcript + ' ';
+            } else {
+              interimTranscript += event.results[i][0].transcript;
+            }
           }
+
+          const combinedText = (finalChunk + interimTranscript).toLowerCase().trim();
+
+          // 1. Check for Wake Word
+          if (!isCaptioningActive && combinedText.includes("caption mode")) {
+            activateCaptioningOnBoard();
+            return;
+          }
+
+          // 2. Check for Stop Word (evaluated immediately on raw combined input)
+          if (isCaptioningActive && combinedText.includes("stop caption")) {
+            // Append final speech prior to "stop caption" command
+            if (finalChunk.length > 0) {
+              const cleanFinal = finalChunk.replace(/stop caption/gi, '').replace(/caption mode/gi, '');
+              accumulatedTranscript += cleanFinal;
+            }
+            stopCaptionMode();
+            return;
+          }
+
+          // 3. Accumulate finalized chunks without losing previous text
+          if (isCaptioningActive) {
+            if (finalChunk.length > 0) {
+              const cleanChunk = finalChunk.replace(/caption mode/gi, '');
+              accumulatedTranscript += cleanChunk;
+            }
+
+            const cleanInterim = interimTranscript.replace(/caption mode/gi, '');
+            const liveDisplay = (accumulatedTranscript + cleanInterim).trim();
+
+            if (liveDisplay.length > 0 && captionTextbox) {
+              updateBoardCaptionText(liveDisplay);
+            }
+          }
+        };
+
+        recognition.onerror = (err) => console.error("Speech Recognition Error:", err);
+
+        recognition.onend = () => {
+          if (isCaptionModeListening) {
+            try { recognition.start(); } catch (e) {}
+          }
+        };
+
+        return true;
+      }
+
+      // --- CANVAS CAPTIONING ENGINE ---
+      function activateCaptioningOnBoard() {
+        isCaptioningActive = true;
+        accumulatedTranscript = ""; // Reset buffer for new caption session
+        showLongOperationToast("Caption Mode Activated!");
+
+        // Estimated initial dimensions for space calculation
+        const initialWidth = 350;
+        const estimatedHeight = 60; 
+
+        // 1. Find free coordinates on the canvas
+        const freePos = findFreePosition(initialWidth, estimatedHeight);
+
+        // 2. Calculate dynamic max width: span from freePos.x to right edge of canvas
+        const rightMargin = 50;
+        const availableWidth = canvas ? (canvas.width - freePos.x - rightMargin) : 600;
+        const dynamicMaxWidth = Math.max(availableWidth, 300); // Ensures a sensible minimum width
+
+        captionTextbox = new fabric.Textbox("Listening...", {
+          left: freePos.x,
+          top: freePos.y,
+          width: dynamicMaxWidth,
+          fontSize: 24,
+          fontFamily: 'Poppins, sans-serif',
+          fill: '#333333',
+          splitByGrapheme: false,
+          editable: true
         });
+
+        canvas.add(captionTextbox);
+        canvas.setActiveObject(captionTextbox);
+        canvas.renderAll();
       }
 
-      function pushHistoryState() {
-        if (!canvas || !canvas.toJSON) return;
-        history.push(JSON.stringify(canvas));
-        if (history.length > MAX_HISTORY_STEPS) {
-          history.shift();
+      function updateBoardCaptionText(text) {
+        if (!captionTextbox || !canvas) return;
+
+        captionTextbox.set('text', text);
+        canvas.renderAll();
+
+        const textBottomEdge = captionTextbox.top + captionTextbox.height;
+        const maxCanvasHeight = canvas.height - 40;
+
+        if (textBottomEdge >= maxCanvasHeight) {
+          limitReachedSound.play().catch(e => console.error("Audio playback error:", e));
+          showLongOperationToast("Canvas space limit reached!");
+          stopCaptionMode();
         }
       }
 
-      function undo() {
-        if (history.length > 1) {
-          history.pop();
-          const prevState = history[history.length - 1];
-          canvas.loadFromJSON(prevState, () => {
-            canvas.renderAll();
-          });
-        } else {
-          canvas.clear();
-          canvas.backgroundColor = '#ffffff';
+      function stopCaptionMode() {
+        isCaptioningActive = false;
+        isCaptionModeListening = false;
+
+        if (recognition) {
+          try { 
+            recognition.abort(); // Instantly kill recognition stream
+          } catch(e) {}
+        }
+
+        // Clean up trailing control commands from final text object on board
+        if (captionTextbox) {
+          const finalCleanText = accumulatedTranscript
+            .replace(/stop caption/gi, '')
+            .replace(/caption mode/gi, '')
+            .trim();
+
+          if (finalCleanText.length > 0) {
+            captionTextbox.set('text', finalCleanText);
+          }
           canvas.renderAll();
-          history = [];
         }
+
+        captionTextbox = null;
+
+        const btn = document.getElementById('caption-btn');
+        if (btn) {
+          btn.style.color = '#444';
+          btn.style.background = '#fff';
+          btn.style.borderColor = '#eee';
+        }
+
+        showLongOperationToast("Caption Mode Stopped.");
       }
 
-      function promptClearBoard() {
-        openConfirmModal(
-          "Limpar quadro", 
-          "Tem certeza de que deseja apagar todo o conteúdo do quadro?", 
-          () => {
+      function toggleCaptionMode() {
+        const btn = document.getElementById('caption-btn');
+
+        if (!isCaptionModeListening) {
+          if (!recognition) {
+            const initialized = initCaptionSpeechRecognition();
+            if (!initialized) return;
+          }
+          
+          isCaptionModeListening = true;
+          try {
+            recognition.start();
+          } catch(e) {}
+
+          if (btn) {
+            btn.style.color = '#c00000';
+            btn.style.background = '#fff5f5';
+            btn.style.borderColor = '#c00000';
+          }
+
+          showLongOperationToast("Listening for 'caption mode'...");
+        } else {
+          stopCaptionMode();
+        }
+      }
+  
+        function getStoredToken() {
+          return localStorage.getItem('superboard_token') || "";
+        }
+  
+        function getSelectedTextOrPrompt() {
+          const activeObj = canvas ? canvas.getActiveObject() : null;
+          if (activeObj && (activeObj.type === 'textbox' || activeObj.type === 'text' || activeObj.type === 'i-text')) {
+            return activeObj.text;
+          }
+          return null;
+        }
+  
+        async function executeAiRequest(actionType, promptText, extraParam = null) {
+          const userToken = getStoredToken();
+  
+          if (!userToken) {
+            showLongOperationToast("Acesso negado. Digite a senha primeiro.");
+            openModal('authModal');
+            return;
+          }
+  
+          if (actionType !== "verifyToken" && (!promptText || !promptText.trim())) {
+            showLongOperationToast("Selecione um texto no quadro primeiro!");
+            return;
+          }
+  
+          if (actionType !== "verifyToken") {
+            showLongOperationToast("Processando...");
+          }
+  
+          try {
+            const response = await fetch(BACKEND_URL, {
+              method: "POST",
+              mode: "cors",
+              redirect: "follow",
+              headers: {
+                "Content-Type": "text/plain;charset=utf-8"
+              },
+              body: JSON.stringify({
+                actionType: actionType,
+                promptText: promptText || "verify",
+                extraParam: extraParam,
+                authToken: userToken,
+                origin: window.location.origin
+              })
+            });
+  
+            const result = await response.json();
+  
+            if (result.success) {
+              if (actionType === "verifyToken") {
+                closeModal('authModal');
+                showLongOperationToast("Acesso liberado com sucesso!");
+                return true;
+              }
+  
+              const activeObj = canvas.getActiveObject();
+              const left = activeObj ? activeObj.left + activeObj.width + 20 : 120;
+              const top = activeObj ? activeObj.top : 120;
+  
+              addAiResponseToBoard(result.response, left, top);
+            } else {
+              showLongOperationToast("Erro: " + (result.error || "Falha na requisição"));
+              if (result.error && result.error.toLowerCase().includes("unauthorized")) {
+                localStorage.removeItem('superboard_token');
+                openModal('authModal');
+              }
+              return false;
+            }
+          } catch (error) {
+            showLongOperationToast("Erro de conexão!");
+            console.error("AI Request Failed:", error);
+            return false;
+          }
+        }
+  
+        let canvas = null;
+        let history = [];
+        const MAX_HISTORY_STEPS = 20;
+  
+        window.addEventListener('load', () => {
+          initCanvas();
+          setupResizeListener();
+          setupKeyboardShortcuts();
+          populateIconPicker();
+          checkAuthOnLoad();
+          
+          createKeyboard();
+          drawHangman(0);
+        });
+  
+        function checkAuthOnLoad() {
+          const savedToken = getStoredToken();
+          if (savedToken) {
+            executeAiRequest("verifyToken", "check");
+          } else {
+            openModal('authModal');
+          }
+        }
+  
+        async function saveAuthToken() {
+          const input = document.getElementById('auth-token-input');
+          const token = input.value.trim();
+          const confirmBtn = document.getElementById('authModalConfirmBtn');
+          
+          if (!token) {
+            showLongOperationToast("Por favor, digite a chave de acesso.");
+            return;
+          }
+  
+          const originalText = confirmBtn.innerHTML;
+          confirmBtn.disabled = true;
+          confirmBtn.classList.add('btn-loading');
+          confirmBtn.innerHTML = '<span class="btn-spinner"></span>';
+          
+          localStorage.setItem('superboard_token', token);
+          const isValid = await executeAiRequest("verifyToken", "check");
+          
+          if (!isValid) {
+            input.value = "";
+          }
+  
+          confirmBtn.disabled = false;
+          confirmBtn.classList.remove('btn-loading');
+          confirmBtn.innerHTML = originalText;
+        }
+  
+        function initCanvas() {
+          const container = document.getElementById('canvas-container');
+          canvas = new fabric.Canvas('whiteboard', {
+            width: container.clientWidth - 20,
+            height: container.clientHeight - 20,
+            backgroundColor: '#ffffff',
+            isDrawingMode: false
+          });
+  
+          canvas.freeDrawingBrush.color = '#000000';
+          canvas.freeDrawingBrush.width = 3;
+  
+          canvas.on('mouse:dblclick', (opt) => {
+            canvas.isDrawingMode = false;
+            updateDrawingBtnUI();
+  
+            const pointer = canvas.getPointer(opt.e);
+            
+            const textbox = new fabric.Textbox("", {
+              placeholder: "Digite aqui...",
+              left: pointer.x,
+              top: pointer.y,
+              width: 200,
+              fontSize: 28,
+              fontFamily: 'Poppins, sans-serif',
+              fill: canvas.freeDrawingBrush.color || '#000000',
+              splitByGrapheme: false,
+              lockUniScaling: true
+            });
+  
+            canvas.add(textbox);
+            canvas.setActiveObject(textbox);
+            textbox.enterEditing();
+          });
+  
+          canvas.on('object:added', pushHistoryState);
+          canvas.on('object:modified', pushHistoryState);
+          canvas.on('object:removed', pushHistoryState);
+  
+          pushHistoryState();
+        }
+  
+        function setupResizeListener() {
+          window.addEventListener('resize', () => {
+            const container = document.getElementById('canvas-container');
+            if (canvas && container) {
+              canvas.setWidth(container.clientWidth - 20);
+              canvas.setHeight(container.clientHeight - 20);
+              canvas.renderAll();
+            }
+          });
+        }
+  
+        function pushHistoryState() {
+          if (!canvas || !canvas.toJSON) return;
+          history.push(JSON.stringify(canvas));
+          if (history.length > MAX_HISTORY_STEPS) {
+            history.shift();
+          }
+        }
+  
+        function undo() {
+          if (history.length > 1) {
+            history.pop();
+            const prevState = history[history.length - 1];
+            canvas.loadFromJSON(prevState, () => {
+              canvas.renderAll();
+            });
+          } else {
             canvas.clear();
             canvas.backgroundColor = '#ffffff';
             canvas.renderAll();
             history = [];
-            pushHistoryState();
           }
-        );
-      }
-
-      function promptDeleteSelected() {
-        const activeObjects = canvas.getActiveObjects();
-        if (!activeObjects.length) return;
-
-        openConfirmModal(
-          "Excluir elementos", 
-          `Deseja remover os ${activeObjects.length} item(ns) selecionados?`, 
-          () => {
-            activeObjects.forEach(obj => canvas.remove(obj));
-            canvas.discardActiveObject().renderAll();
+        }
+  
+        function promptClearBoard() {
+          openConfirmModal(
+            "Limpar quadro", 
+            "Tem certeza de que deseja apagar todo o conteúdo do quadro?", 
+            () => {
+              canvas.clear();
+              canvas.backgroundColor = '#ffffff';
+              canvas.renderAll();
+              history = [];
+              pushHistoryState();
+            }
+          );
+        }
+  
+        function promptDeleteSelected() {
+          const activeObjects = canvas.getActiveObjects();
+          if (!activeObjects.length) return;
+  
+          openConfirmModal(
+            "Excluir elementos", 
+            `Deseja remover os ${activeObjects.length} item(ns) selecionados?`, 
+            () => {
+              activeObjects.forEach(obj => canvas.remove(obj));
+              canvas.discardActiveObject().renderAll();
+            }
+          );
+        }
+  
+        function updateBrushFromColorPicker(hex) {
+          updateBrushColor(hex);
+        }
+  
+        function updateBrushColor(colorHex, element = null) {
+          canvas.isDrawingMode = true;
+          canvas.freeDrawingBrush.color = colorHex;
+  
+          const validHex = colorHex.startsWith('#') ? colorHex : '#000000';
+          document.getElementById('brush-color-picker').value = validHex;
+  
+          document.querySelectorAll('.color-circle').forEach(el => el.classList.remove('active'));
+          if (element) {
+            element.classList.add('active');
           }
-        );
-      }
-
-      function updateBrushFromColorPicker(hex) {
-        updateBrushColor(hex);
-      }
-
-      function updateBrushColor(colorHex, element = null) {
-        canvas.isDrawingMode = true;
-        canvas.freeDrawingBrush.color = colorHex;
-
-        const validHex = colorHex.startsWith('#') ? colorHex : '#000000';
-        document.getElementById('brush-color-picker').value = validHex;
-
-        document.querySelectorAll('.color-circle').forEach(el => el.classList.remove('active'));
-        if (element) {
-          element.classList.add('active');
         }
-      }
-
-      function updateBrushSize(size) {
-        canvas.isDrawingMode = true;
-        canvas.freeDrawingBrush.width = parseInt(size, 10) || 3;
-      }
-
-      function addPostIt() {
-        canvas.add(new fabric.Rect({ 
-          width: 120, height: 120, fill: '#ffcccc', opacity: 0.8, left: 100, top: 100 
-        }));
-        canvas.isDrawingMode = false;
-      }
-
-      function addCircleFrame() {
-        canvas.add(new fabric.Circle({ 
-          radius: 40, fill: 'transparent', stroke: '#c00000', strokeWidth: 3, left: 150, top: 150 
-        }));
-        canvas.isDrawingMode = false;
-      }
-
-      function downloadCanvas() {
-        showLongOperationToast("Gerando imagem...");
-        const today = new Date().toISOString().slice(0, 10);
-        setTimeout(() => {
-          const link = document.createElement('a');
-          link.download = `aula-superboard-${today}.png`;
-          link.href = canvas.toDataURL({ format: 'png', quality: 1.0 });
-          link.click();
-        }, 800);
-      }
-
-      function triggerAiTranslate() {
-        const text = getSelectedTextOrPrompt();
-        if (!text) { showLongOperationToast("Selecione um texto primeiro!"); return; }
-        executeAiRequest("translate", text);
-      }
-
-      function triggerAiCorrection() {
-        const text = getSelectedTextOrPrompt();
-        if (!text) { showLongOperationToast("Selecione um texto primeiro!"); return; }
-        executeAiRequest("correct", text);
-      }
-
-      function triggerAiExamples() {
-        const text = getSelectedTextOrPrompt();
-        if (!text) { showLongOperationToast("Selecione uma palavra ou frase!"); return; }
-        executeAiRequest("examples", text);
-      }
-
-      function triggerAiDialogue() {
-        const text = getSelectedTextOrPrompt();
-        if (!text) { showLongOperationToast("Selecione um tópico no quadro!"); return; }
-        openModal('dialogueModal');
-      }
-
-      function submitDialogueRequest(level) {
-        closeModal('dialogueModal');
-        const text = getSelectedTextOrPrompt();
-        executeAiRequest("dialogue", text, level);
-      }
-
-      function addAiResponseToBoard(responseContent, sourceObjLeft = 100, sourceObjTop = 100) {
-        if (!responseContent || responseContent.trim() === "") {
-          showLongOperationToast("Nenhuma resposta recebida da IA.");
-          return;
+  
+        function updateBrushSize(size) {
+          canvas.isDrawingMode = true;
+          canvas.freeDrawingBrush.width = parseInt(size, 10) || 3;
         }
-
-        const aiTextbox = new fabric.Textbox(responseContent, {
-          left: sourceObjLeft,
-          top: sourceObjTop,
-          width: 320,
-          fontSize: 16,
-          fontFamily: 'Poppins, sans-serif',
-          fill: '#000000',
-          backgroundColor: 'transparent',
-          padding: 8,
-          borderColor: '#c00000',
-          cornerColor: '#c00000',
-          cornerSize: 8,
-          transparentCorners: false,
-          splitByGrapheme: false,
-          shadow: new fabric.Shadow({
-            color: 'rgba(0,0,0,0.1)',
-            blur: 10,
-            offsetX: 2,
-            offsetY: 4
-          })
-        });
-
-        canvas.add(aiTextbox);
-        canvas.setActiveObject(aiTextbox);
-        canvas.isDrawingMode = false;
-        canvas.renderAll();
-      }
-
-      const AVAILABLE_ICONS = [
-        'fa-star', 'fa-heart', 'fa-thumbs-up', 'fa-check', 'fa-xmark', 
-        'fa-question', 'fa-lightbulb', 'fa-graduation-cap', 'fa-book', 'fa-pencil',
-        'fa-clock', 'fa-calendar', 'fa-location-dot', 'fa-comment', 'fa-envelope',
-        'fa-arrow-right', 'fa-arrow-left', 'fa-arrow-up', 'fa-arrow-down', 'fa-music',
-        'fa-camera', 'fa-globe', 'fa-bolt', 'fa-fire', 'fa-trophy'
-      ];
-
-      function populateIconPicker() {
-        const grid = document.getElementById('icon-picker-grid');
-        grid.innerHTML = '';
-        AVAILABLE_ICONS.forEach(iconClass => {
-          const div = document.createElement('div');
-          div.className = 'icon-option';
-          div.innerHTML = `<i class="fa-solid ${iconClass}"></i>`;
-          div.onclick = () => selectIcon(iconClass);
-          grid.appendChild(div);
-        });
-      }
-
-      function openIconModal() { openModal('iconModal'); }
-
-      function selectIcon(iconClass) {
-        closeModal('iconModal');
-        const tempI = document.createElement('i');
-        tempI.className = `fa-solid ${iconClass}`;
-        document.body.appendChild(tempI);
-        const charCode = window.getComputedStyle(tempI, ':before').getPropertyValue('content').replace(/"/g, '');
-        document.body.removeChild(tempI);
-
-        const iconText = new fabric.Text(charCode, {
-          fontFamily: '"Font Awesome 6 Free"',
-          fontWeight: '900',
-          fontSize: 40,
-          left: 100,
-          top: 100,
-          fill: canvas.freeDrawingBrush.color || '#333333'
-        });
-
-        canvas.add(iconText);
-        canvas.isDrawingMode = false;
-      }
-
-      function openModal(id) { document.getElementById(id).classList.add('active'); }
-      function closeModal(id) { document.getElementById(id).classList.remove('active'); }
-
-      let currentConfirmAction = null;
-
-      function openConfirmModal(title, message, onConfirm) {
-        document.getElementById('confirmModalTitle').innerText = title;
-        document.getElementById('confirmModalMessage').innerText = message;
-        currentConfirmAction = onConfirm;
-        document.getElementById('confirmModalActionBtn').onclick = executeAndCloseConfirm;
-        openModal('confirmModal');
-      }
-
-      function executeAndCloseConfirm() {
-        if (typeof currentConfirmAction === 'function') currentConfirmAction();
-        closeConfirmModal();
-      }
-
-      function closeConfirmModal() {
-        currentConfirmAction = null;
-        closeModal('confirmModal');
-      }
-
-      function showLongOperationToast(message) {
-        const toast = document.getElementById('toast');
-        toast.textContent = message;
-        toast.classList.add('show');
-        setTimeout(() => { toast.classList.remove('show'); }, 2500);
-      }
-
-      function setupKeyboardShortcuts() {
+  
+        function addPostIt() {
+          canvas.add(new fabric.Rect({ 
+            width: 120, height: 120, fill: '#ffcccc', opacity: 0.8, left: 100, top: 100 
+          }));
+          canvas.isDrawingMode = false;
+        }
+  
+        function addCircleFrame() {
+          canvas.add(new fabric.Circle({ 
+            radius: 40, fill: 'transparent', stroke: '#c00000', strokeWidth: 3, left: 150, top: 150 
+          }));
+          canvas.isDrawingMode = false;
+        }
+  
+        function downloadCanvas() {
+          showLongOperationToast("Gerando imagem...");
+          const today = new Date().toISOString().slice(0, 10);
+          setTimeout(() => {
+            const link = document.createElement('a');
+            link.download = `aula-superboard-${today}.png`;
+            link.href = canvas.toDataURL({ format: 'png', quality: 1.0 });
+            link.click();
+          }, 800);
+        }
+  
+        function triggerAiTranslate() {
+          const text = getSelectedTextOrPrompt();
+          if (!text) { showLongOperationToast("Selecione um texto primeiro!"); return; }
+          executeAiRequest("translate", text);
+        }
+  
+        function triggerAiCorrection() {
+          const text = getSelectedTextOrPrompt();
+          if (!text) { showLongOperationToast("Selecione um texto primeiro!"); return; }
+          executeAiRequest("correct", text);
+        }
+  
+        function triggerAiExamples() {
+          const text = getSelectedTextOrPrompt();
+          if (!text) { showLongOperationToast("Selecione uma palavra ou frase!"); return; }
+          executeAiRequest("examples", text);
+        }
+  
+        function triggerAiDialogue() {
+          const text = getSelectedTextOrPrompt();
+          if (!text) { showLongOperationToast("Selecione um tópico no quadro!"); return; }
+          openModal('dialogueModal');
+        }
+  
+        function submitDialogueRequest(level) {
+          closeModal('dialogueModal');
+          const text = getSelectedTextOrPrompt();
+          executeAiRequest("dialogue", text, level);
+        }
+  
+        function addAiResponseToBoard(responseContent, sourceObjLeft = 100, sourceObjTop = 100) {
+          if (!responseContent || responseContent.trim() === "") {
+            showLongOperationToast("Nenhuma resposta recebida da IA.");
+            return;
+          }
+  
+          const aiTextbox = new fabric.Textbox(responseContent, {
+            left: sourceObjLeft,
+            top: sourceObjTop,
+            width: 320,
+            fontSize: 16,
+            fontFamily: 'Poppins, sans-serif',
+            fill: '#000000',
+            backgroundColor: 'transparent',
+            padding: 8,
+            borderColor: '#c00000',
+            cornerColor: '#c00000',
+            cornerSize: 8,
+            transparentCorners: false,
+            splitByGrapheme: false,
+            shadow: new fabric.Shadow({
+              color: 'rgba(0,0,0,0.1)',
+              blur: 10,
+              offsetX: 2,
+              offsetY: 4
+            })
+          });
+  
+          canvas.add(aiTextbox);
+          canvas.setActiveObject(aiTextbox);
+          canvas.isDrawingMode = false;
+          canvas.renderAll();
+        }
+  
+        const AVAILABLE_ICONS = [
+          'fa-star', 'fa-heart', 'fa-thumbs-up', 'fa-check', 'fa-xmark', 
+          'fa-question', 'fa-lightbulb', 'fa-graduation-cap', 'fa-book', 'fa-pencil',
+          'fa-clock', 'fa-calendar', 'fa-location-dot', 'fa-comment', 'fa-envelope',
+          'fa-arrow-right', 'fa-arrow-left', 'fa-arrow-up', 'fa-arrow-down', 'fa-music',
+          'fa-camera', 'fa-globe', 'fa-bolt', 'fa-fire', 'fa-trophy'
+        ];
+  
+        function populateIconPicker() {
+          const grid = document.getElementById('icon-picker-grid');
+          grid.innerHTML = '';
+          AVAILABLE_ICONS.forEach(iconClass => {
+            const div = document.createElement('div');
+            div.className = 'icon-option';
+            div.innerHTML = `<i class="fa-solid ${iconClass}"></i>`;
+            div.onclick = () => selectIcon(iconClass);
+            grid.appendChild(div);
+          });
+        }
+  
+        function openIconModal() { openModal('iconModal'); }
+  
+        function selectIcon(iconClass) {
+          closeModal('iconModal');
+          const tempI = document.createElement('i');
+          tempI.className = `fa-solid ${iconClass}`;
+          document.body.appendChild(tempI);
+          const charCode = window.getComputedStyle(tempI, ':before').getPropertyValue('content').replace(/"/g, '');
+          document.body.removeChild(tempI);
+  
+          const iconText = new fabric.Text(charCode, {
+            fontFamily: '"Font Awesome 6 Free"',
+            fontWeight: '900',
+            fontSize: 40,
+            left: 100,
+            top: 100,
+            fill: canvas.freeDrawingBrush.color || '#333333'
+          });
+  
+          canvas.add(iconText);
+          canvas.isDrawingMode = false;
+        }
+  
+        function openModal(id) { document.getElementById(id).classList.add('active'); }
+        function closeModal(id) { document.getElementById(id).classList.remove('active'); }
+  
+        let currentConfirmAction = null;
+  
+        function openConfirmModal(title, message, onConfirm) {
+          document.getElementById('confirmModalTitle').innerText = title;
+          document.getElementById('confirmModalMessage').innerText = message;
+          currentConfirmAction = onConfirm;
+          document.getElementById('confirmModalActionBtn').onclick = executeAndCloseConfirm;
+          openModal('confirmModal');
+        }
+  
+        function executeAndCloseConfirm() {
+          if (typeof currentConfirmAction === 'function') currentConfirmAction();
+          closeConfirmModal();
+        }
+  
+        function closeConfirmModal() {
+          currentConfirmAction = null;
+          closeModal('confirmModal');
+        }
+  
+        function showLongOperationToast(message) {
+          const toast = document.getElementById('toast');
+          toast.textContent = message;
+          toast.classList.add('show');
+          setTimeout(() => { toast.classList.remove('show'); }, 2500);
+        }
+  
+        function setupKeyboardShortcuts() {
         window.addEventListener('keydown', (e) => {
           const activeModal = document.querySelector('.modal-overlay.active');
           const activeObj = canvas ? canvas.getActiveObject() : null;
           const isEditingText = activeObj && activeObj.isEditing;
 
-          // Handle Enter key inside open modals
+          // Prevent shortcut triggers while typing in inputs or editing canvas text
+          if (document.activeElement.tagName === "INPUT" || isEditingText) return;
+
           if (e.key === 'Enter' && activeModal) {
             e.preventDefault();
             const primaryBtn = activeModal.querySelector('.btn-modal-primary');
@@ -1219,7 +1414,12 @@
             return;
           }
 
-          if (document.activeElement.tagName === "INPUT" || isEditingText) return;
+          // Toggle Caption Mode with Alt + C
+          if (e.altKey && e.key.toLowerCase() === 'c') {
+            e.preventDefault();
+            toggleCaptionMode();
+            return;
+          }
 
           if (e.ctrlKey && e.key.toLowerCase() === 'l') { e.preventDefault(); canvas.isDrawingMode = true; }
           if (e.ctrlKey && e.key.toLowerCase() === 's') { e.preventDefault(); canvas.isDrawingMode = false; }
@@ -1227,168 +1427,229 @@
           if (e.ctrlKey && e.key.toLowerCase() === 'z') { e.preventDefault(); undo(); }
         });
       }
-
-      function switchTab(name, el) { 
-        document.querySelectorAll('.tab').forEach(t => t.classList.remove('active')); 
-        el.classList.add('active'); 
-        document.querySelectorAll('[id^="screen-"]').forEach(s => s.style.display = 'none'); 
-        document.getElementById('screen-' + name).style.display = (name === 'Quadro') ? 'flex' : 'block'; 
-      }
-
-      function toggleDrawingMode() {
-        if (!canvas) return;
-        canvas.isDrawingMode = !canvas.isDrawingMode;
-        updateDrawingBtnUI();
-      }
-
-      function updateDrawingBtnUI() {
-        const btn = document.getElementById('draw-toggle-btn');
-        if (!btn || !canvas) return;
-
-        if (canvas.isDrawingMode) {
-          btn.innerHTML = '<i class="fa-solid fa-pen"></i> DESENHO';
-          btn.style.background = '#eef9ee';
-          btn.style.borderColor = '#9cdb9c';
-          btn.style.color = '#2e7d32';
-        } else {
-          btn.innerHTML = '<i class="fa-solid fa-mouse-pointer"></i> SELEÇÃO';
-          btn.style.background = '#fff';
-          btn.style.borderColor = '#ddd';
-          btn.style.color = '#444';
+  
+        function switchTab(name, el) { 
+          document.querySelectorAll('.tab').forEach(t => t.classList.remove('active')); 
+          el.classList.add('active'); 
+          document.querySelectorAll('[id^="screen-"]').forEach(s => s.style.display = 'none'); 
+          document.getElementById('screen-' + name).style.display = (name === 'Quadro') ? 'flex' : 'block'; 
         }
-      }
-
-      /* HANGMAN ENGINE */
-      let secretWord = "", guessedLetters = [], errors = 0, usedWords = [];
-
-      function createKeyboard() { 
-        const kb = document.getElementById('game-keyboard'); 
-        kb.innerHTML = ''; 
-        "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split('').forEach(l => { 
-          const btn = document.createElement('button'); 
-          btn.className = 'key-btn'; 
-          btn.innerText = l; 
-          btn.onclick = () => makeGuess(l, btn); 
-          kb.appendChild(btn); 
-        }); 
-      }
-      
-      function startHangman() {
-        const allTexts = canvas.getObjects().filter(obj => (obj.type === 'text' || obj.type === 'i-text' || obj.type === 'textbox') && obj.text.trim().length > 0);
-        if (allTexts.length === 0) { 
-          openConfirmModal("Modo game", "Escreva algumas palavras no quadro primeiro para jogar!", () => {});
-          return; 
+  
+        function toggleDrawingMode() {
+          if (!canvas) return;
+          canvas.isDrawingMode = !canvas.isDrawingMode;
+          updateDrawingBtnUI();
         }
-
-        let wordsArray = [];
-        allTexts.forEach(obj => { 
-          const wordsInObject = obj.text.trim().toUpperCase().split(/\s+/); 
-          wordsInObject.forEach(word => { 
-            const cleanWord = word.replace(/[^A-ZÀ-Ú]/g, ""); 
-            if (cleanWord.length > 1) wordsArray.push(cleanWord); 
-          }); 
-        });
-
-        wordsArray = [...new Set(wordsArray)];
-        if (wordsArray.length === 0) { 
-          openConfirmModal("Modo game", "Não foram encontradas palavras válidas no quadro.", () => {});
-          return; 
-        }
-
-        if (usedWords.length >= wordsArray.length) { usedWords = []; }
-
-        const availableWords = wordsArray.filter(w => !usedWords.includes(w));
-        secretWord = availableWords[Math.floor(Math.random() * availableWords.length)];
-        usedWords.push(secretWord);
-
-        guessedLetters = []; 
-        errors = 0; 
-        document.getElementById('game-message').innerHTML = "";
-        createKeyboard(); 
-        drawHangman(0); 
-        updateHangmanDisplay();
-      }
-      
-      function makeGuess(letter, btn) { 
-        if(!secretWord || guessedLetters.includes(letter) || errors >= 6) return; 
-        guessedLetters.push(letter); 
-        btn.style.visibility = 'hidden'; 
-        if(!secretWord.includes(letter)) { errors++; } 
-        drawHangman(errors); 
-        updateHangmanDisplay(); 
-        checkGameOver(); 
-      }
-      
-      function updateHangmanDisplay() { 
-        document.getElementById('hangman-word-display').innerText = secretWord.split('').map(l => guessedLetters.includes(l) ? l : '_').join(' '); 
-      }
-      
-      function checkGameOver() {
-        const msg = document.getElementById('game-message');
-        const isWin = secretWord && !document.getElementById('hangman-word-display').innerText.includes('_');
-        if(errors >= 6) { 
-          msg.innerHTML = `A palavra era: <strong>${secretWord}</strong>`;
-        } else if(isWin) { 
-          msg.innerText = "Parabéns!"; 
-          msg.style.color = "green";
-        }
-      }
-      
-      function drawHangman(step) {
-        const c = document.getElementById('hangman-canvas').getContext('2d');
-        c.clearRect(0, 0, 200, 250); 
-        c.lineWidth = 3; 
-        c.strokeStyle = '#333';
-        c.beginPath(); c.moveTo(20, 200); c.lineTo(160, 200); c.moveTo(40, 200); c.lineTo(40, 10); c.lineTo(110, 10); c.lineTo(110, 30); c.stroke();
-        if(step > 0) { c.beginPath(); c.arc(110, 50, 20, 0, Math.PI*2); c.stroke(); }
-        if(step > 1) { c.beginPath(); c.moveTo(110, 70); c.lineTo(110, 140); c.stroke(); }
-        if(step > 2) { c.beginPath(); c.moveTo(110, 85); c.lineTo(80, 110); c.stroke(); }
-        if(step > 3) { c.beginPath(); c.moveTo(110, 85); c.lineTo(140, 110); c.stroke(); }
-        if(step > 4) { c.beginPath(); c.moveTo(110, 140); c.lineTo(80, 180); c.stroke(); }
-        if(step > 5) { c.beginPath(); c.moveTo(110, 140); c.lineTo(140, 180); c.stroke(); }
-      }
-
-      /* CLIPBOARD PASTE IMAGE */
-      document.addEventListener('paste', function (e) {
-        const items = e.clipboardData && e.clipboardData.items;
-        if (!items) return;
-
-        for (let i = 0; i < items.length; i++) {
-          const item = items[i];
-          if (item.type.indexOf('image') !== -1) {
-            const blob = item.getAsFile();
-            const reader = new FileReader();
-
-            reader.onload = function (event) {
-              const imgObj = new Image();
-              imgObj.src = event.target.result;
-
-              imgObj.onload = function () {
-                const fabricImg = new fabric.Image(imgObj, {
-                  left: canvas.width ? canvas.width / 4 : 150,
-                  top: canvas.height ? canvas.height / 4 : 150,
-                  selectable: true,
-                  hasControls: true,
-                  cornerColor: '#c00000',
-                  cornerSize: 8,
-                  transparentCorners: false
-                });
-
-                if (fabricImg.width > 400) { fabricImg.scaleToWidth(400); }
-
-                canvas.add(fabricImg);
-                canvas.setActiveObject(fabricImg);
-                canvas.renderAll();
-                showLongOperationToast("Imagem colada!");
-              };
-            };
-
-            reader.readAsDataURL(blob);
-            e.preventDefault();
-            break;
+  
+        function updateDrawingBtnUI() {
+          const btn = document.getElementById('draw-toggle-btn');
+          if (!btn || !canvas) return;
+  
+          if (canvas.isDrawingMode) {
+            btn.innerHTML = '<i class="fa-solid fa-pen"></i> DESENHO';
+            btn.style.background = '#eef9ee';
+            btn.style.borderColor = '#9cdb9c';
+            btn.style.color = '#2e7d32';
+          } else {
+            btn.innerHTML = '<i class="fa-solid fa-mouse-pointer"></i> SELEÇÃO';
+            btn.style.background = '#fff';
+            btn.style.borderColor = '#ddd';
+            btn.style.color = '#444';
           }
         }
-      });
-    </script>
+  
+        /* HANGMAN ENGINE */
+        let secretWord = "", guessedLetters = [], errors = 0, usedWords = [];
+  
+        function createKeyboard() { 
+          const kb = document.getElementById('game-keyboard'); 
+          kb.innerHTML = ''; 
+          "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split('').forEach(l => { 
+            const btn = document.createElement('button'); 
+            btn.className = 'key-btn'; 
+            btn.innerText = l; 
+            btn.onclick = () => makeGuess(l, btn); 
+            kb.appendChild(btn); 
+          }); 
+        }
+        
+        function startHangman() {
+          const allTexts = canvas.getObjects().filter(obj => (obj.type === 'text' || obj.type === 'i-text' || obj.type === 'textbox') && obj.text.trim().length > 0);
+          if (allTexts.length === 0) { 
+            openConfirmModal("Modo game", "Escreva algumas palavras no quadro primeiro para jogar!", () => {});
+            return; 
+          }
+  
+          let wordsArray = [];
+          allTexts.forEach(obj => { 
+            const wordsInObject = obj.text.trim().toUpperCase().split(/\s+/); 
+            wordsInObject.forEach(word => { 
+              const cleanWord = word.replace(/[^A-ZÀ-Ú]/g, ""); 
+              if (cleanWord.length > 1) wordsArray.push(cleanWord); 
+            }); 
+          });
+  
+          wordsArray = [...new Set(wordsArray)];
+          if (wordsArray.length === 0) { 
+            openConfirmModal("Modo game", "Não foram encontradas palavras válidas no quadro.", () => {});
+            return; 
+          }
+  
+          if (usedWords.length >= wordsArray.length) { usedWords = []; }
+  
+          const availableWords = wordsArray.filter(w => !usedWords.includes(w));
+          secretWord = availableWords[Math.floor(Math.random() * availableWords.length)];
+          usedWords.push(secretWord);
+  
+          guessedLetters = []; 
+          errors = 0; 
+          document.getElementById('game-message').innerHTML = "";
+          createKeyboard(); 
+          drawHangman(0); 
+          updateHangmanDisplay();
+        }
+        
+        function makeGuess(letter, btn) { 
+          if(!secretWord || guessedLetters.includes(letter) || errors >= 6) return; 
+          guessedLetters.push(letter); 
+          btn.style.visibility = 'hidden'; 
+          if(!secretWord.includes(letter)) { errors++; } 
+          drawHangman(errors); 
+          updateHangmanDisplay(); 
+          checkGameOver(); 
+        }
+        
+        function updateHangmanDisplay() { 
+          document.getElementById('hangman-word-display').innerText = secretWord.split('').map(l => guessedLetters.includes(l) ? l : '_').join(' '); 
+        }
+        
+        function checkGameOver() {
+          const msg = document.getElementById('game-message');
+          const isWin = secretWord && !document.getElementById('hangman-word-display').innerText.includes('_');
+          if(errors >= 6) { 
+            msg.innerHTML = `A palavra era: <strong>${secretWord}</strong>`;
+          } else if(isWin) { 
+            msg.innerText = "Parabéns!"; 
+            msg.style.color = "green";
+          }
+        }
+        
+        function drawHangman(step) {
+          const c = document.getElementById('hangman-canvas').getContext('2d');
+          c.clearRect(0, 0, 200, 250); 
+          c.lineWidth = 3; 
+          c.strokeStyle = '#333';
+          c.beginPath(); c.moveTo(20, 200); c.lineTo(160, 200); c.moveTo(40, 200); c.lineTo(40, 10); c.lineTo(110, 10); c.lineTo(110, 30); c.stroke();
+          if(step > 0) { c.beginPath(); c.arc(110, 50, 20, 0, Math.PI*2); c.stroke(); }
+          if(step > 1) { c.beginPath(); c.moveTo(110, 70); c.lineTo(110, 140); c.stroke(); }
+          if(step > 2) { c.beginPath(); c.moveTo(110, 85); c.lineTo(80, 110); c.stroke(); }
+          if(step > 3) { c.beginPath(); c.moveTo(110, 85); c.lineTo(140, 110); c.stroke(); }
+          if(step > 4) { c.beginPath(); c.moveTo(110, 140); c.lineTo(80, 180); c.stroke(); }
+          if(step > 5) { c.beginPath(); c.moveTo(110, 140); c.lineTo(140, 180); c.stroke(); }
+        }
+  
+        /* CLIPBOARD PASTE IMAGE */
+        document.addEventListener('paste', function (e) {
+          const items = e.clipboardData && e.clipboardData.items;
+          if (!items) return;
+  
+          for (let i = 0; i < items.length; i++) {
+            const item = items[i];
+            if (item.type.indexOf('image') !== -1) {
+              const blob = item.getAsFile();
+              const reader = new FileReader();
+  
+              reader.onload = function (event) {
+                const imgObj = new Image();
+                imgObj.src = event.target.result;
+  
+                imgObj.onload = function () {
+                  const fabricImg = new fabric.Image(imgObj, {
+                    left: canvas.width ? canvas.width / 4 : 150,
+                    top: canvas.height ? canvas.height / 4 : 150,
+                    selectable: true,
+                    hasControls: true,
+                    cornerColor: '#c00000',
+                    cornerSize: 8,
+                    transparentCorners: false
+                  });
+  
+                  if (fabricImg.width > 400) { fabricImg.scaleToWidth(400); }
+  
+                  canvas.add(fabricImg);
+                  canvas.setActiveObject(fabricImg);
+                  canvas.renderAll();
+                  showLongOperationToast("Imagem colada!");
+                };
+              };
+  
+              reader.readAsDataURL(blob);
+              e.preventDefault();
+              break;
+            }
+          }
+        });
+
+        // Helper function to check if two rectangular bounding boxes collide
+function isOverlapping(rectA, rectB, padding = 20) {
+  return !(
+    rectA.x + rectA.width + padding < rectB.x ||
+    rectA.x > rectB.x + rectB.width + padding ||
+    rectA.y + rectA.height + padding < rectB.y ||
+    rectA.y > rectB.y + rectB.height + padding
+  );
+}
+// Function to grab bounding boxes of all objects currently on the Fabric canvas
+function getOccupiedSpaces() {
+  if (!canvas) return [];
+
+  // Loop through all canvas objects and map their coordinates
+  return canvas.getObjects().map(obj => {
+    const rect = obj.getBoundingRect();
+    return {
+      x: rect.left,
+      y: rect.top,
+      width: rect.width,
+      height: rect.height
+    };
+  });
+}
+
+// Function to find an open x, y coordinate on the Fabric canvas
+function findFreePosition(newWidth, newHeight) {
+  const occupied = getOccupiedSpaces();
+
+  // Starting coordinates on the canvas
+  const startX = 50;
+  const startY = 50;
+
+  const step = 20; // Pixel steps to check
+  const maxCanvasHeight = (canvas ? canvas.height : 600) - 100;
+
+  let candidate = { x: startX, y: startY, width: newWidth, height: newHeight };
+  let hasCollision = true;
+
+  // Safety limit to prevent infinite loops if the board is completely full
+  let attempts = 0;
+  const maxAttempts = 500;
+
+  while (hasCollision && attempts < maxAttempts) {
+    attempts++;
+    hasCollision = occupied.some(space => isOverlapping(candidate, space));
+
+    if (hasCollision) {
+      candidate.y += step;
+
+      // If we reach the bottom of the canvas, jump right to a new column
+      if (candidate.y + candidate.height > maxCanvasHeight) {
+        candidate.y = startY;
+        candidate.x += step * 6;
+      }
+    }
+  }
+
+  return { x: candidate.x, y: candidate.y };
+}
+      </script>
   </body>
 </html>
