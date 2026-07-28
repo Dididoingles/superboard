@@ -621,7 +621,7 @@
         <div id="sidebar">
           <div class="side-item" onclick="openIconModal()" data-tooltip="Adicionar ícone"><i class="fa-solid fa-icons"></i></div>
           <div class="side-item" onclick="addPostIt()" data-tooltip="Post-it"><i class="fa-regular fa-note-sticky"></i></div>
-          <div class="side-item" id="caption-btn" onclick="toggleCaptionMode()" data-tooltip="Caption Mode"><i class="fa-solid fa-closed-captioning"></i></div>
+          <div class="side-item" id="caption-btn" onclick="toggleCaptionMode()" data-tooltip="Caption"><i class="fa-solid fa-closed-captioning"></i></div>
           
           <hr style="width: 60%; border: 0; border-top: 1px solid #eee; margin: 2px 0;">
 
@@ -827,7 +827,7 @@
           const combinedText = (finalChunk + interimTranscript).toLowerCase().trim();
 
           // 1. Check for Wake Word
-          if (!isCaptioningActive && combinedText.includes("caption mode")) {
+          if (!isCaptioningActive && combinedText.includes("caption")) {
             activateCaptioningOnBoard();
             return;
           }
@@ -836,7 +836,7 @@
           if (isCaptioningActive && combinedText.includes("stop caption")) {
             // Append final speech prior to "stop caption" command
             if (finalChunk.length > 0) {
-              const cleanFinal = finalChunk.replace(/stop caption/gi, '').replace(/caption mode/gi, '');
+              const cleanFinal = finalChunk.replace(/stop caption/gi, '').replace(/caption/gi, '');
               accumulatedTranscript += cleanFinal;
             }
             stopCaptionMode();
@@ -846,11 +846,11 @@
           // 3. Accumulate finalized chunks without losing previous text
           if (isCaptioningActive) {
             if (finalChunk.length > 0) {
-              const cleanChunk = finalChunk.replace(/caption mode/gi, '');
+              const cleanChunk = finalChunk.replace(/caption/gi, '');
               accumulatedTranscript += cleanChunk;
             }
 
-            const cleanInterim = interimTranscript.replace(/caption mode/gi, '');
+            const cleanInterim = interimTranscript.replace(/caption/gi, '');
             const liveDisplay = (accumulatedTranscript + cleanInterim).trim();
 
             if (liveDisplay.length > 0 && captionTextbox) {
@@ -934,7 +934,7 @@
         if (captionTextbox) {
           const finalCleanText = accumulatedTranscript
             .replace(/stop caption/gi, '')
-            .replace(/caption mode/gi, '')
+            .replace(/caption/gi, '')
             .trim();
 
           if (finalCleanText.length > 0) {
@@ -975,7 +975,7 @@
             btn.style.borderColor = '#c00000';
           }
 
-          showLongOperationToast("Listening for 'caption mode'...");
+          showLongOperationToast("Listening...");
         } else {
           stopCaptionMode();
         }
