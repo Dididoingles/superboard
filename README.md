@@ -176,7 +176,7 @@ Desenvolvido por **Diandra C.** — [@dicarvalho.prof](https://instagram.com/dic
 
 ## Reportar problemas
 
-Este é um projeto pessoal, sem suporte oficial. Se você é a autora e encontrou um bug, abra uma issue descrevendo:
+Este é um projeto pessoal, sem suporte oficial. Se você encontrou um bug, abra uma issue descrevendo:
 
 1. O que você fez
 2. O que esperava que acontecesse
