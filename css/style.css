@@ -8,6 +8,7 @@
   --text-color: #333333;
   --panel-bg: #ffffff;
   --border-color: #dddddd;
+--header-color: #3D3635;
 
   --radius-pill: 999px;
   --radius-lg: 14px;
@@ -45,7 +46,7 @@ body {
    2. HEADER
    ========================================================================== */
 .app-header {
-  background: var(--primary-red);
+  background: var(--header-color);
   color: #fff;
   display: flex;
   align-items: center;
